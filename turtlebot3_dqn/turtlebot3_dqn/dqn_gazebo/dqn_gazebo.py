@@ -27,22 +27,16 @@ import rclpy
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 from rclpy.node import Node
 from std_srvs.srv import Empty
+
 from turtlebot3_msgs.srv import Goal
 
 
 class GazeboInterface(Node):
-    """
-        A node which acts as an interface between RL_Environment and Gazebo Simulator
-
-        This nodes mostly receive requests (initializing the environment, task succeed, and task failed) from
-        RL_Environment, and gives response to this requests by sending requests to the simulator
-    """
+# rl_environment와 가제보 시뮬레이터 사이의 인터페이스 역할
 
     def __init__(self, stage):
         super().__init__('gazebo_interface')
-        ##########################
-        #  Initialize variables  #
-        ##########################
+
         self.stage = int(stage)
 
         self.entity_name = 'Goal'
@@ -52,25 +46,10 @@ class GazeboInterface(Node):
         self.entity_pose_x = 0.5
         self.entity_pose_y = 0.0
 
-        #####################################
-        #  Initialize clients and services  #
-        #####################################
-
-        """
-            Initialize clients
-            The following clients send their request to Gazebo simulator for
-            - deleting entity (Goal)
-            - spawn an entity (Goal)
-            - reset the simulation environment
-        """
         self.delete_entity_client = self.create_client(DeleteEntity, 'delete_entity')
         self.spawn_entity_client = self.create_client(SpawnEntity, 'spawn_entity')
         self.reset_simulation_client = self.create_client(Empty, 'reset_simulation')
 
-        """
-            Initialize services
-            The following services give response to the request of their corresponding client in RLEnvironment class
-        """
         self.callback_group = MutuallyExclusiveCallbackGroup()
         self.initialize_env_service = self.create_service(
             Goal, 'initialize_env', self.initialize_env_callback, callback_group=self.callback_group)
@@ -80,9 +59,6 @@ class GazeboInterface(Node):
             Goal, 'task_failed', self.task_failed_callback, callback_group=self.callback_group)
 
     def open_entity(self):
-        """
-        Find the path to the goal_box model using the package share directory and load it.
-        """
         try:
             package_share = get_package_share_directory('turtlebot3_gazebo')
             model_path = os.path.join(package_share, 'models', 'turtlebot3_dqn_world', 'goal_box', 'model.sdf')
@@ -93,11 +69,7 @@ class GazeboInterface(Node):
             self.get_logger().error('Failed to load entity file: {}'.format(e))
             raise e
 
-    def reset_simulation(self):
-        """
-        Sends a request to the gazebo service to reset the simulator
-        This method mostly will be called upon a task failed request from RLEnvironment
-        """
+    def reset_simulation(self):  # 실패 시
         reset_req = Empty.Request()
 
         while not self.reset_simulation_client.wait_for_service(timeout_sec=1.0):
@@ -106,10 +78,6 @@ class GazeboInterface(Node):
         self.reset_simulation_client.call_async(reset_req)
 
     def delete_entity(self):
-        """
-        Deletes the goal_box entity by sending a request to the gazebo service
-        This method mostly will be called upon a task success and a task failed request from RLEnvironment
-        """
         delete_req = DeleteEntity.Request()
         delete_req.name = self.entity_name
 
@@ -118,12 +86,9 @@ class GazeboInterface(Node):
 
         future = self.delete_entity_client.call_async(delete_req)
         rclpy.spin_until_future_complete(self, future)
+        self.get_logger().info(f'Entity {self.entity_name} 삭제됨.')
 
     def spawn_entity(self):
-        """
-        Spawns the goal_box entity by sending a request to the gazebo server
-        This method mostly will be called upon a task success and a task failed request from RLEnvironment
-        """
         entity_pose = Pose()
         entity_pose.position.x = self.entity_pose_x
         entity_pose.position.y = self.entity_pose_y
@@ -140,12 +105,6 @@ class GazeboInterface(Node):
         rclpy.spin_until_future_complete(self, future)
 
     def task_succeed_callback(self, request, response):
-        """
-        when a task is succeed (goal is reached), a request will be called from RLEnvironment
-        This method has to call some functions to sends back the response (position of the new goal) to the client
-        :param request: Empty
-        :param response: Position of the new generated goal
-        """
         self.delete_entity()
         self.generate_goal_pose()
         self.spawn_entity()
@@ -156,12 +115,6 @@ class GazeboInterface(Node):
         return response
 
     def task_failed_callback(self, request, response):
-        """
-        when a task is failed (either a collision happened or timeout reached), a request will be called from RL_environment
-        This method has to call some functions to sends back the response (position of the new goal) to the client
-        :param request: Empty
-        :param response: Position of the new generated goal
-        """
         self.delete_entity()
         self.reset_simulation()
         self.generate_goal_pose()
@@ -173,11 +126,6 @@ class GazeboInterface(Node):
         return response
 
     def initialize_env_callback(self, request, response):
-        """
-        The RLEnvironment sends a request for initializing the environment
-        :param request: Empty
-        :param response: Position of the generated goal which will be [0.5, 0]
-        """
         self.delete_entity()
         self.reset_simulation()
         self.spawn_entity()
@@ -188,14 +136,10 @@ class GazeboInterface(Node):
         return response
 
     def generate_goal_pose(self):
-        """
-        generates a random position for the goal if stage 1, 2 and 3
-        if stage 4 is called will choose from predefined positions
-        """
         if self.stage != 4:
             self.entity_pose_x = random.randrange(-23, 23) / 10
             self.entity_pose_y = random.randrange(-23, 23) / 10
-        else:
+        else:  # stage 4는 고정된 목표 위치
             goal_pose_list = [
                 [1.0, 0.0], [2.0, -1.5], [0.0, -2.0], [2.0, 2.0], [0.8, 2.0], [-1.9, 1.9],
                 [-1.9, 0.2], [-1.9, -0.5], [-2.0, -2.0], [-0.5, -1.0], [-0.5, 2.0], [2.0, -0.5]

@@ -17,19 +17,19 @@
 # Authors: Ryan Shim, Gilbert
 
 import collections
-from keras.layers import Activation
-from keras.layers import Dense
-from keras.layers import Dropout
-from keras.models import Sequential
-from keras.models import load_model
-from keras.optimizers import RMSprop
 import json
-import numpy
 import os
 import random
 import sys
 import time
 
+from keras.api.layers import Activation
+from keras.api.layers import Dense
+from keras.api.layers import Dropout
+from keras.api.models import load_model
+from keras.api.models import Sequential
+from keras.api.optimizers import RMSprop
+import numpy
 import rclpy
 from rclpy.node import Node
 
@@ -37,13 +37,10 @@ from turtlebot3_msgs.srv import Dqn
 
 
 class DQNTest(Node):
+
     def __init__(self, stage):
         super().__init__('dqn_test')
 
-        """************************************************************
-        ** Initialise variables
-        ************************************************************"""
-        # Stage
         self.stage = int(stage)
 
         # State size and action size
@@ -86,20 +83,10 @@ class DQNTest(Node):
                 param = json.load(outfile)
                 self.epsilon = param.get('epsilon')
 
-        """************************************************************
-        ** Initialise ROS clients
-        ************************************************************"""
-        # Initialise clients
         self.dqn_com_client = self.create_client(Dqn, 'dqn_com')
 
-        """************************************************************
-        ** Start process
-        ************************************************************"""
         self.process()
 
-    """*******************************************************************************
-    ** Callback functions and relevant functions
-    *******************************************************************************"""
     def process(self):
         global_step = 0
 

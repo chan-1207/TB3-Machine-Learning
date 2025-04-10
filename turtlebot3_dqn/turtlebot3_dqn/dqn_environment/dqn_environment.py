@@ -15,37 +15,30 @@
 # limitations under the License.
 #
 # Authors: Ryan Shim, Gilbert
+
+import math
+
 from geometry_msgs.msg import Twist
 from nav_msgs.msg import Odometry
-from sensor_msgs.msg import LaserScan
-
+import numpy
 import rclpy
+from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 from rclpy.node import Node
 from rclpy.qos import QoSProfile
 from rclpy.qos import qos_profile_sensor_data
+from std_srvs.srv import Empty
+from sensor_msgs.msg import LaserScan
+
 from turtlebot3_msgs.srv import Dqn
 from turtlebot3_msgs.srv import Goal
-from std_srvs.srv import Empty
-from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
-
-import numpy as np
-import math
 
 
 class RLEnvironment(Node):
-    """
-    A node which has to act as an interface between (rl_agent and gazebo_interface)
-    It has to implement make(), step(), and reset() like as an environment implemented in OpenAI gym
-    """
+# rl_agent와 gazebo_interface 사이의 인터페이스 역할
 
     def __init__(self):
         super().__init__('rl_environment')
-        """**************************************************************
-                                Initialize variables
-        **************************************************************"""
-        """
-            if train_mode is not equal to True it will run on test mode
-        """
+        # train_mode = false -> test mode
         self.train_mode = True
         self.goal_pose_x = 0.0
         self.goal_pose_y = 0.0
@@ -53,14 +46,13 @@ class RLEnvironment(Node):
         self.robot_pose_y = 0.0
 
         self.action_size = 5
-        # time_out shows the maximum number of actions in each episode
-        self.time_out = 1000
+        self.time_out = 1000 # 최대 작업 수
 
         self.done = False
         self.fail = False
         self.succeed = False
 
-        # parameters to calculate the reward
+        # 리워드 pram
         self.goal_angle = 0.0
         self.goal_distance = 1.0
         self.init_goal_distance = 0.5
@@ -71,15 +63,10 @@ class RLEnvironment(Node):
         self.stop_cmd_vel_timer = None
         self.angular_vel = [1.0, 0.5, 0.0, -0.5, -1.0]
 
-        """************************************************************
-            Initialise publisher, subscribers, clients and services
-        ************************************************************"""
         qos = QoSProfile(depth=10)
 
-        # Initialize publisher
         self.cmd_vel_pub = self.create_publisher(Twist, 'cmd_vel', qos)
 
-        # Initialize subscribers
         self.odom_sub = self.create_subscription(
             Odometry,
             'odom',
@@ -93,44 +80,39 @@ class RLEnvironment(Node):
             qos_profile_sensor_data
         )
 
-        # Initialize client
         self.clients_callback_group = MutuallyExclusiveCallbackGroup()
         self.task_succeed_client = self.create_client(
             Goal, 'task_succeed', callback_group=self.clients_callback_group
-            )
+        )
         self.task_failed_client = self.create_client(
             Goal, 'task_failed', callback_group=self.clients_callback_group
-            )
+        )
         self.initialize_environment_client = self.create_client(
             Goal, 'initialize_env', callback_group=self.clients_callback_group
-            )
+        )
 
         # Initialize service
         self.rl_agent_interface_service = self.create_service(
-            Dqn, 'rl_agent_interface', self.rl_agent_interface_callback
-            )
+            Dqn,
+            'rl_agent_interface',
+            self.rl_agent_interface_callback
+        )
         self.make_environment_service = self.create_service(
-            Empty, 'make_environment', self.make_environment_callback
-            )
+            Empty,
+            'make_environment',
+            self.make_environment_callback
+        )
         self.reset_environment_service = self.create_service(
-            Dqn, 'reset_environment', self.reset_environment_callback
-            )
+            Dqn,
+            'reset_environment',
+            self.reset_environment_callback
+        )
 
     def make_environment_callback(self, request, response):
-        """
-        gives service to the rl_agent to make the environment by calling initialize_environment() function
-        :param request: Empty
-        :param response: Empty
-        """
         self.initialize_environment()
         return response
 
-    def initialize_environment(self):
-        """
-        This method will be called just from environment_make_callback()
-        initialize_environment_client will send a request to the gazebo_interface service
-        the client waits until gets back the response (goal position) form service
-        """
+    def initialize_environment(self):  # 골 pose 받을 때까지 대기
         while not self.initialize_environment_client.wait_for_service(timeout_sec=1.0):
             self.get_logger().warn('service for initialize the environment is not available, waiting ...')
 
@@ -146,22 +128,11 @@ class RLEnvironment(Node):
             self.goal_pose_y = response.pose_y
             self.get_logger().info('goal initialized at [%f, %f]' % (self.goal_pose_x, self.goal_pose_y))
 
-    def reset_environment_callback(self, request, response):
-        """
-        gives service to the rl_agent reset environment
-        :param request: Dqn request
-        :param response: Dqn response (state of the robot: lidar_rays + robot pose (or robots distance to goal and its heading angle to goal))
-        :return:
-        """
+    def reset_environment_callback(self, request, response):  # return: 라이다 정보 + 목표까지 거리 + 각도
         response.state = self.calculate_state()
         return response
 
-    def call_task_succeed(self):
-        """
-        When the task is succeed (by reaching the goal) this client will send a request to the gazebo_interface service
-        the client waits until gets back the response (goal position) form service
-        :return:
-        """
+    def call_task_succeed(self):  # 성공 시 목표 응답 대기
         while not self.task_succeed_client.wait_for_service(timeout_sec=1.0):
             self.get_logger().warn('service for task succeed is not available, waiting ...')
 
@@ -177,12 +148,7 @@ class RLEnvironment(Node):
         else:
             self.get_logger().error('task succeed service call failed')
 
-    def call_task_failed(self):
-        """
-        When the task is failed (either collision or timeout) this client will send a request to the gazebo_interface service
-        the client waits until gets back the response (goal position) form service
-        :return:
-        """
+    def call_task_failed(self):  # 실패 시 목표 응답 대기
         while not self.task_failed_client.wait_for_service(timeout_sec=1.0):
             self.get_logger().warn('service for task failed is not available, waiting ...')
 
@@ -198,30 +164,20 @@ class RLEnvironment(Node):
             self.get_logger().error('task failed service call failed')
 
     def scan_sub_callback(self, scan):
-        """
-        subscribes to the laser scanned message
-        :param scan: laser scanner message
-        :return:
-        """
-        self.scan_ranges = []  # clear the list
+        self.scan_ranges = []
         num_of_lidar_rays = len(scan.ranges)
 
         for i in range(num_of_lidar_rays):
             if scan.ranges[i] == float('Inf'):
                 self.scan_ranges.append(3.5)
-            elif np.isnan(scan.ranges[i]):
+            elif numpy.isnan(scan.ranges[i]):
                 self.scan_ranges.append(0)
             else:
                 self.scan_ranges.append(scan.ranges[i])
 
         self.min_obstacle_distance = min(self.scan_ranges)
 
-    def odom_sub_callback(self, msg):
-        """
-        subscribes to the robots odometry message and calculates the robots distance and heading angle to the goal
-        :param msg: robot pose and orientation massage
-        :return:
-        """
+    def odom_sub_callback(self, msg): # 목표까지 거리와 각도 계산
         self.robot_pose_x = msg.pose.pose.position.x
         self.robot_pose_y = msg.pose.pose.position.y
         _, _, self.robot_pose_theta = self.euler_from_quaternion(msg.pose.pose.orientation)
@@ -243,12 +199,7 @@ class RLEnvironment(Node):
         self.goal_distance = goal_distance
         self.goal_angle = goal_angle
 
-    def calculate_state(self):
-        """
-        calculates the robot state (lidar rays , distance to the goal ,robots heading angle toward the goal)
-        Checks the task succeed and the task failed
-        :return:
-        """
+    def calculate_state(self):  # 라이다, 목표까지 거리, 각도 계산, 작업 성공 여부
         state = list()
         # state.append(float(self.goal_pose_x))
         # state.append(float(self.goal_pose_y))
@@ -285,11 +236,7 @@ class RLEnvironment(Node):
 
         return state
 
-    def calculate_reward(self, action):
-        """
-        calculates the reward accumulating by agent after doing each action, feel free to change the reward function
-        :return:
-        """
+    def calculate_reward(self, action): # 보상 계산, 리워드 함수 변경 가능
         if self.train_mode:
             yaw_reward = 1 - 2 * math.sqrt(math.fabs(self.goal_angle / math.pi))
 
@@ -319,17 +266,10 @@ class RLEnvironment(Node):
 
         return reward
 
-    def rl_agent_interface_callback(self, request, response):
-        """
-        gives service to the rl_agent. The rl_agent sends an action as a request and this methods has to does the action
-        and gets back the state, reward and done as a response
-        :param request: a DQN request including action
-        :param response: a DQN response including state, reward, and done
-        :return:
-        """
+    def rl_agent_interface_callback(self, request, response):  # 상태, 보상 및 완료를 응답으로 반환
         action = request.action
         twist = Twist()
-        # robot always receives a (constant linear velocity + a variable angular velocity)
+        # 일정한 선형 속도 + 가변 각속도을 받음
         twist.linear.x = 0.15
         twist.angular.z = self.angular_vel[action]
         self.cmd_vel_pub.publish(twist)
@@ -351,21 +291,11 @@ class RLEnvironment(Node):
         return response
 
     def timer_callback(self):
-        """
-        after each self.stop_cmd_vel_timer seconds, this method will be called to send a stop cmd_vel to the robot
-        :return:
-        """
         self.get_logger().info('Stop called')
         self.cmd_vel_pub.publish(Twist())
         self.destroy_timer(self.stop_cmd_vel_timer)
 
-    def euler_from_quaternion(self, quat):
-        """
-        Converts quaternion (w in last place) to euler roll, pitch, yaw
-        :param quat: [x, y, z, w]
-        :return:
-        """
-
+    def euler_from_quaternion(self, quat):  # 오일러 각으로 변환
         x = quat.x
         y = quat.y
         z = quat.z
@@ -373,14 +303,14 @@ class RLEnvironment(Node):
 
         sinr_cosp = 2 * (w * x + y * z)
         cosr_cosp = 1 - 2 * (x * x + y * y)
-        roll = np.arctan2(sinr_cosp, cosr_cosp)
+        roll = numpy.arctan2(sinr_cosp, cosr_cosp)
 
         sinp = 2 * (w * y - z * x)
-        pitch = np.arcsin(sinp)
+        pitch = numpy.arcsin(sinp)
 
         siny_cosp = 2 * (w * z + x * y)
         cosy_cosp = 1 - 2 * (y * y + z * z)
-        yaw = np.arctan2(siny_cosp, cosy_cosp)
+        yaw = numpy.arctan2(siny_cosp, cosy_cosp)
 
         return roll, pitch, yaw
 

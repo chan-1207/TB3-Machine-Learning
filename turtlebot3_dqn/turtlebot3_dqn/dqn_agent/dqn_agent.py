@@ -15,32 +15,34 @@
 # limitations under the License.
 #
 # Authors: Ryan Shim, Gilbert
+
 import collections
 import datetime
 import json
 import math
+import numpy as np
 import os
 import random as rnd
 import sys
 import time
-import numpy as np
 
+from keras.api.layers import Dense
+from keras.api.models import load_model
+from keras.api.models import Sequential
+from keras.api.optimizers import Adam
 import rclpy
 from rclpy.node import Node
-from turtlebot3_msgs.srv import Dqn
 from std_srvs.srv import Empty
-
 import tensorflow as tf
-from keras.api.layers import Dense
-from keras.api.models import Sequential
-from keras.api.models import load_model
-from keras.api.optimizers import Adam
+
+from turtlebot3_msgs.srv import Dqn
+
+
 tf.config.set_visible_devices([], 'GPU')
 
 LOGGING = True
 current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 dqn_reward_log_dir = 'logs/gradient_tape/' + current_time + '/dqn_stage4_usual_180_ray_yaw_reward'
-
 
 class DQNMetric(tf.keras.metrics.Metric):
 
@@ -65,14 +67,10 @@ class DQNAgent(Node):
     def __init__(self, stage):
         super().__init__('dqn_agent')
 
-        """************************************************************
-        ** Initialise variables
-        ************************************************************"""
-        # Stage
         self.stage = int(stage)
         self.train_mode = True
         # 수정: 환경에서 반환하는 state가 26개라면 state_size를 26으로 설정
-        self.state_size = 26  # 이전 182 -> 26으로 변경
+        self.state_size = 26
         self.action_size = 5
         self.max_training_episodes = 10003
 
@@ -118,17 +116,10 @@ class DQNAgent(Node):
             self.dqn_reward_writer = tf.summary.create_file_writer(dqn_reward_log_dir)
             self.dqn_reward_metric = DQNMetric()
 
-        """************************************************************
-        ** Initialise ROS clients
-        ************************************************************"""
-        # Initialise clients
         self.rl_agent_interface_client = self.create_client(Dqn, 'rl_agent_interface')
         self.make_environment_client = self.create_client(Empty, 'make_environment')
         self.reset_environment_client = self.create_client(Dqn, 'reset_environment')
 
-        """************************************************************
-        ** Start process
-        ************************************************************"""
         self.process()
 
     def process(self):
@@ -142,7 +133,6 @@ class DQNAgent(Node):
             local_step = 0
             score = 0
 
-            # Reset DQN environment
             state = self.reset_environment()
             time.sleep(1.0)
 
@@ -176,7 +166,6 @@ class DQNAgent(Node):
                     param_dictionary = dict(zip(param_keys, param_values))
                     break
 
-                # While loop rate
                 time.sleep(0.01)
 
             # Update result and save model every 100 episodes
