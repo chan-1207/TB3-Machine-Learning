@@ -21,7 +21,8 @@ from sensor_msgs.msg import LaserScan
 
 import rclpy
 from rclpy.node import Node
-from rclpy.qos import QoSProfile, qos_profile_sensor_data
+from rclpy.qos import QoSProfile
+from rclpy.qos import qos_profile_sensor_data
 from turtlebot3_msgs.srv import Dqn
 from turtlebot3_msgs.srv import Goal
 from std_srvs.srv import Empty
@@ -71,7 +72,7 @@ class RLEnvironment(Node):
         self.angular_vel = [1.0, 0.5, 0.0, -0.5, -1.0]
 
         """************************************************************
-                 Initialise publisher, subscribers, clients and services
+            Initialise publisher, subscribers, clients and services
         ************************************************************"""
         qos = QoSProfile(depth=10)
 
@@ -79,22 +80,41 @@ class RLEnvironment(Node):
         self.cmd_vel_pub = self.create_publisher(Twist, 'cmd_vel', qos)
 
         # Initialize subscribers
-        self.odom_sub = self.create_subscription(Odometry, 'odom', self.odom_sub_callback, qos)
-        self.scan_sub = self.create_subscription(LaserScan, 'scan', self.scan_sub_callback, qos_profile_sensor_data)
+        self.odom_sub = self.create_subscription(
+            Odometry,
+            'odom',
+            self.odom_sub_callback,
+            qos
+        )
+        self.scan_sub = self.create_subscription(
+            LaserScan,
+            'scan',
+            self.scan_sub_callback,
+            qos_profile_sensor_data
+        )
 
         # Initialize client
         self.clients_callback_group = MutuallyExclusiveCallbackGroup()
-        self.task_succeed_client = self.create_client(Goal, 'task_succeed', callback_group=self.clients_callback_group)
-        self.task_failed_client = self.create_client(Goal, 'task_failed', callback_group=self.clients_callback_group)
-        self.initialize_environment_client = self.create_client(Goal, 'initialize_env',
-                                                                callback_group=self.clients_callback_group)
+        self.task_succeed_client = self.create_client(
+            Goal, 'task_succeed', callback_group=self.clients_callback_group
+            )
+        self.task_failed_client = self.create_client(
+            Goal, 'task_failed', callback_group=self.clients_callback_group
+            )
+        self.initialize_environment_client = self.create_client(
+            Goal, 'initialize_env', callback_group=self.clients_callback_group
+            )
 
         # Initialize service
-        self.rl_agent_interface_service = self.create_service(Dqn, 'rl_agent_interface',
-                                                              self.rl_agent_interface_callback)
-
-        self.make_environment_service = self.create_service(Empty, 'make_environment', self.make_environment_callback)
-        self.reset_environment_service = self.create_service(Dqn, 'reset_environment', self.reset_environment_callback)
+        self.rl_agent_interface_service = self.create_service(
+            Dqn, 'rl_agent_interface', self.rl_agent_interface_callback
+            )
+        self.make_environment_service = self.create_service(
+            Empty, 'make_environment', self.make_environment_callback
+            )
+        self.reset_environment_service = self.create_service(
+            Dqn, 'reset_environment', self.reset_environment_callback
+            )
 
     def make_environment_callback(self, request, response):
         """
@@ -273,8 +293,8 @@ class RLEnvironment(Node):
         if self.train_mode:
             yaw_reward = 1 - 2 * math.sqrt(math.fabs(self.goal_angle / math.pi))
 
-            distance_reward = (2 * self.init_goal_distance) / \
-                              (self.init_goal_distance + self.goal_distance) - 1
+            distance_reward = (2 * self.init_goal_distance) / (
+                self.init_goal_distance + self.goal_distance) - 1
 
             obstacle_reward = 0.0
             if self.min_obstacle_distance < 0.50:
@@ -370,9 +390,14 @@ def main(args=None):
 
     rl_environment = RLEnvironment()
 
-    while True:
-        rclpy.spin_once(rl_environment)
-    rclpy.shutdown()
+    try:
+        while rclpy.ok():
+            rclpy.spin_once(rl_environment)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        rl_environment.destroy_node()
+        rclpy.shutdown()
 
 
 if __name__ == '__main__':

@@ -15,17 +15,19 @@
 # limitations under the License.
 #
 # Authors: Ryan Shim, Gilbert
-import rclpy
-from rclpy.node import Node
-from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
-from gazebo_msgs.srv import DeleteEntity, SpawnEntity
-from std_srvs.srv import Empty
-from turtlebot3_msgs.srv import Goal
-from geometry_msgs.msg import Pose
-
 import os
 import random
 import sys
+
+from ament_index_python.packages import get_package_share_directory
+from gazebo_msgs.srv import DeleteEntity
+from gazebo_msgs.srv import SpawnEntity
+from geometry_msgs.msg import Pose
+import rclpy
+from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
+from rclpy.node import Node
+from std_srvs.srv import Empty
+from turtlebot3_msgs.srv import Goal
 
 
 class GazeboInterface(Node):
@@ -38,24 +40,21 @@ class GazeboInterface(Node):
 
     def __init__(self, stage):
         super().__init__('gazebo_interface')
-        """**************************************************************
-                            Initialize variables
-        **************************************************************"""
-        # Environment stage (could be 1, 2, 3, 4)
+        ##########################
+        #  Initialize variables  #
+        ##########################
         self.stage = int(stage)
 
-        # Read the 'Goal' Entity Model
         self.entity_name = 'Goal'
         self.entity = None
         self.open_entity()
 
-        # initial entity(Goal) position
         self.entity_pose_x = 0.5
         self.entity_pose_y = 0.0
 
-        """*************************************************************
-                Initialize clients and services
-        *************************************************************"""
+        #####################################
+        #  Initialize clients and services  #
+        #####################################
 
         """
             Initialize clients
@@ -68,30 +67,31 @@ class GazeboInterface(Node):
         self.spawn_entity_client = self.create_client(SpawnEntity, 'spawn_entity')
         self.reset_simulation_client = self.create_client(Empty, 'reset_simulation')
 
-        # Initialize services
         """
             Initialize services
             The following services give response to the request of their corresponding client in RLEnvironment class
         """
         self.callback_group = MutuallyExclusiveCallbackGroup()
-        self.initialize_env_service = self.create_service(Goal, 'initialize_env', self.initialize_env_callback,
-                                                          callback_group=self.callback_group)
-        self.task_succeed_service = self.create_service(Goal, 'task_succeed', self.task_succeed_callback,
-                                                        callback_group=self.callback_group)
-        self.task_failed_service = self.create_service(Goal, 'task_failed', self.task_failed_callback,
-                                                       callback_group=self.callback_group)
+        self.initialize_env_service = self.create_service(
+            Goal, 'initialize_env', self.initialize_env_callback, callback_group=self.callback_group)
+        self.task_succeed_service = self.create_service(
+            Goal, 'task_succeed', self.task_succeed_callback, callback_group=self.callback_group)
+        self.task_failed_service = self.create_service(
+            Goal, 'task_failed', self.task_failed_callback, callback_group=self.callback_group)
 
     def open_entity(self):
         """
-        find the path to the goal_box model and loads it
+        Find the path to the goal_box model using the package share directory and load it.
         """
-        entity_dir_path = os.path.dirname(os.path.realpath(__file__))
-        entity_dir_path = entity_dir_path.replace(
-            'turtlebot3_rl/turtlebot3_rl/turtlebot3_gazebo',
-            '/turtlebot3/turtlebot3_simulations/turtlebot3_gazebo/models/turtlebot3_dqn_world/goal_box'
-        )
-        entity_path = os.path.join(entity_dir_path, 'model.sdf')
-        self.entity = open(entity_path, 'r').read()
+        try:
+            package_share = get_package_share_directory('turtlebot3_gazebo')
+            model_path = os.path.join(package_share, 'models', 'turtlebot3_dqn_world', 'goal_box', 'model.sdf')
+            with open(model_path, 'r') as f:
+                self.entity = f.read()
+            self.get_logger().info('Loaded entity from: ' + model_path)
+        except Exception as e:
+            self.get_logger().error('Failed to load entity file: {}'.format(e))
+            raise e
 
     def reset_simulation(self):
         """
@@ -100,7 +100,6 @@ class GazeboInterface(Node):
         """
         reset_req = Empty.Request()
 
-        # check connection to the service server
         while not self.reset_simulation_client.wait_for_service(timeout_sec=1.0):
             self.get_logger().warn('service for reset_simulation is not available, waiting ...')
 
@@ -114,7 +113,6 @@ class GazeboInterface(Node):
         delete_req = DeleteEntity.Request()
         delete_req.name = self.entity_name
 
-        # check connection to the service server
         while not self.delete_entity_client.wait_for_service(timeout_sec=1.0):
             self.get_logger().warn('service for delete_entity is not available, waiting ...')
 
@@ -135,7 +133,6 @@ class GazeboInterface(Node):
         spawn_req.xml = self.entity
         spawn_req.initial_pose = entity_pose
 
-        # check connection to the service server
         while not self.spawn_entity_client.wait_for_service(timeout_sec=1.0):
             self.get_logger().warn('service for spawn_entity is not available, waiting ...')
 
@@ -199,20 +196,27 @@ class GazeboInterface(Node):
             self.entity_pose_x = random.randrange(-23, 23) / 10
             self.entity_pose_y = random.randrange(-23, 23) / 10
         else:
-            goal_pose_list = [[1.0, 0.0], [2.0, -1.5], [0.0, -2.0], [2.0, 2.0], [0.8, 2.0],
-                              [-1.9, 1.9], [-1.9, 0.2], [-1.9, -0.5], [-2.0, -2.0], [-0.5, -1.0], [-0.5, 2.0], [2.0, -0.5]]
+            goal_pose_list = [
+                [1.0, 0.0], [2.0, -1.5], [0.0, -2.0], [2.0, 2.0], [0.8, 2.0], [-1.9, 1.9],
+                [-1.9, 0.2], [-1.9, -0.5], [-2.0, -2.0], [-0.5, -1.0], [-0.5, 2.0], [2.0, -0.5]
+            ]
             rand_index = random.randint(0, 11)
             self.entity_pose_x = goal_pose_list[rand_index][0]
             self.entity_pose_y = goal_pose_list[rand_index][1]
 
 
-def main(args=sys.argv[1]):
-    rclpy.init(args=args)
-    gazebo_interface = GazeboInterface(args)
-    while True:
-        rclpy.spin_once(gazebo_interface, timeout_sec=0.1)
-
-    rclpy.shutdown()
+def main(args=None):
+    rclpy.init(args=sys.argv)
+    stage = sys.argv[1] if len(sys.argv) > 1 else '1'
+    gazebo_interface = GazeboInterface(stage)
+    try:
+        while rclpy.ok():
+            rclpy.spin_once(gazebo_interface, timeout_sec=0.1)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        gazebo_interface.destroy_node()
+        rclpy.shutdown()
 
 
 if __name__ == '__main__':

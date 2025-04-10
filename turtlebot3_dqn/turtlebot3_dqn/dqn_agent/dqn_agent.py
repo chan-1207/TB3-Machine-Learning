@@ -31,11 +31,10 @@ from turtlebot3_msgs.srv import Dqn
 from std_srvs.srv import Empty
 
 import tensorflow as tf
-from tensorflow.keras.layers import Dense
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.models import load_model
-from tensorflow.keras.optimizers import Adam
-
+from keras.api.layers import Dense
+from keras.api.models import Sequential
+from keras.api.models import load_model
+from keras.api.optimizers import Adam
 tf.config.set_visible_devices([], 'GPU')
 
 LOGGING = True
@@ -72,8 +71,8 @@ class DQNAgent(Node):
         # Stage
         self.stage = int(stage)
         self.train_mode = True
-        # State size and action size
-        self.state_size = 182  # 180 lidar rays
+        # 수정: 환경에서 반환하는 state가 26개라면 state_size를 26으로 설정
+        self.state_size = 26  # 이전 182 -> 26으로 변경
         self.action_size = 5
         self.max_training_episodes = 10003
 
@@ -102,14 +101,15 @@ class DQNAgent(Node):
         self.load_episode = 0
         self.model_dir_path = os.path.dirname(os.path.realpath(__file__))
         self.model_dir_path = self.model_dir_path.replace('turtlebot3_dqn/dqn_agent', 'model')
-        self.model_path = os.path.join(self.model_dir_path,
-                                       'stage' + str(self.stage) + '_episode' + str(self.load_episode) + '.h5')
+        self.model_path = os.path.join(
+            self.model_dir_path, 'stage' + str(self.stage) + '_episode' + str(self.load_episode) + '.h5')
 
         if self.load_model:
             self.model.set_weights(load_model(self.model_path).get_weights())
-            with open(os.path.join(self.model_dir_path,
-                                   'stage' + str(self.stage) + '_episode' + str(
-                                       self.load_episode) + '.json')) as outfile:
+            with open(os.path.join(
+                self.model_dir_path,
+                'stage' + str(self.stage) + '_episode' + str(self.load_episode) + '.json'
+            )) as outfile:
                 param = json.load(outfile)
                 self.epsilon = param.get('epsilon')
 
@@ -242,7 +242,7 @@ class DQNAgent(Node):
         model.add(Dense(256, activation='relu'))
         model.add(Dense(128, activation='relu'))
         model.add(Dense(self.action_size, activation='linear'))
-        model.compile(loss='mse', optimizer=Adam(lr=self.learning_rate))
+        model.compile(loss='mse', optimizer=Adam(learning_rate=self.learning_rate))
         model.summary()
 
         return model
@@ -302,20 +302,27 @@ class DQNAgent(Node):
         x_train = np.reshape(x_train, [len(data_in_mini_batch), self.state_size])
         y_train = np.reshape(y_train, [len(data_in_mini_batch), self.action_size])
 
-        self.model.fit(tf.convert_to_tensor(x_train, tf.float32), tf.convert_to_tensor(y_train, tf.float32),
-                       batch_size=self.batch_size, verbose=0)
+        self.model.fit(
+            tf.convert_to_tensor(x_train, tf.float32),
+            tf.convert_to_tensor(y_train, tf.float32),
+            batch_size=self.batch_size, verbose=0
+        )
         self.target_update_after_counter += 1
 
         if self.target_update_after_counter > self.update_target_after and terminal:
             self.update_target_model()
 
 
-def main(args=sys.argv[1]):
+def main(args=None):
+    if args is None:
+        args = sys.argv
+    stage = args[1] if len(args) > 1 else '1'
     rclpy.init(args=args)
-    dqn_agent = DQNAgent(args)
+
+    dqn_agent = DQNAgent(stage)
     rclpy.spin(dqn_agent)
 
-    dqn_agent.destroy()
+    dqn_agent.destroy_node()
     rclpy.shutdown()
 
 

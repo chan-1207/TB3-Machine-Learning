@@ -29,12 +29,12 @@ def generate_launch_description():
     saved_model_file_name = 'stage1_'
     saved_model = os.path.join(
         get_package_share_directory('turtlebot3_dqn'),
-        'save_model',
+        'dqn_model',
         saved_model_file_name)
 
     gazebo_model = os.path.join(
         get_package_share_directory('turtlebot3_gazebo'),
-        'models/turtlebot3_square/goal_box/model.sdf')
+        'models/turtlebot3_dqn_world/goal_box/model.sdf')
 
     return LaunchDescription([
         Node(
