@@ -91,7 +91,6 @@ class RLEnvironment(Node):
             Goal, 'initialize_env', callback_group=self.clients_callback_group
         )
 
-        # Initialize service
         self.rl_agent_interface_service = self.create_service(
             Dqn,
             'rl_agent_interface',
@@ -201,8 +200,6 @@ class RLEnvironment(Node):
 
     def calculate_state(self):  # 라이다, 목표까지 거리, 각도 계산, 작업 성공 여부
         state = list()
-        # state.append(float(self.goal_pose_x))
-        # state.append(float(self.goal_pose_y))
         state.append(float(self.goal_distance))
         state.append(float(self.goal_angle))
 
@@ -245,13 +242,11 @@ class RLEnvironment(Node):
 
             obstacle_reward = 0.0
             if self.min_obstacle_distance < 0.50:
-                obstacle_reward = -3.0  # self.min_obstacle_distance - 0.45
+                obstacle_reward = -1.0
 
-            # reward = self.action_reward[action] + (0.1 * (2-self.goal_distance)) + obstacle_reward
             reward = distance_reward + obstacle_reward + yaw_reward
-            # + for succeed, - for fail
             if self.succeed:
-                reward = 15.0
+                reward = 50.0
             elif self.fail:
                 reward = -10.0
         else:

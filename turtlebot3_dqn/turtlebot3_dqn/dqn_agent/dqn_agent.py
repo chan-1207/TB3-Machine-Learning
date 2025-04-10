@@ -20,9 +20,9 @@ import collections
 import datetime
 import json
 import math
-import numpy as np
+import numpy
 import os
-import random as rnd
+import random
 import sys
 import time
 
@@ -39,6 +39,7 @@ from turtlebot3_msgs.srv import Dqn
 
 
 tf.config.set_visible_devices([], 'GPU')
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'  # TensorFlow 로그 비활성화
 
 LOGGING = True
 current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -66,7 +67,6 @@ class DQNMetric(tf.keras.metrics.Metric):
 class DQNAgent(Node):
     def __init__(self, stage):
         super().__init__('dqn_agent')
-
         self.stage = int(stage)
         self.train_mode = True
         # 수정: 환경에서 반환하는 state가 26개라면 state_size를 26으로 설정
@@ -74,7 +74,7 @@ class DQNAgent(Node):
         self.action_size = 5
         self.max_training_episodes = 10003
 
-        # DQN hyperparameter
+        # DQN 하이퍼파라미터 설정
         self.discount_factor = 0.99
         self.learning_rate = 0.0007
         self.epsilon = 1.0
@@ -83,18 +83,16 @@ class DQNAgent(Node):
         self.epsilon_min = 0.05
         self.batch_size = 128
 
-        # Replay memory
         self.replay_memory = collections.deque(maxlen=500000)
         self.min_replay_memory_size = 5000
 
-        # Build model and target model
+        # Q-Network 및 타겟 네트워크 생성, 초기 업데이트 수행
         self.model = self.create_qnetwork()
         self.target_model = self.create_qnetwork()
         self.update_target_model()
         self.update_target_after = 5000
         self.target_update_after_counter = 0
 
-        # Load saved models
         self.load_model = False
         self.load_episode = 0
         self.model_dir_path = os.path.dirname(os.path.realpath(__file__))
@@ -111,8 +109,7 @@ class DQNAgent(Node):
                 param = json.load(outfile)
                 self.epsilon = param.get('epsilon')
 
-        # Tensorboard Log
-        if LOGGING:
+        if LOGGING:  # Tensorboard Log
             self.dqn_reward_writer = tf.summary.create_file_writer(dqn_reward_log_dir)
             self.dqn_reward_metric = DQNMetric()
 
@@ -133,19 +130,19 @@ class DQNAgent(Node):
             local_step = 0
             score = 0
 
-            state = self.reset_environment()
+            state = self.reset_environment()  # 환경 리셋 후 초기 상태 획득
             time.sleep(1.0)
 
             while True:
                 local_step += 1
-                action = int(self.get_action(state))
+                action = int(self.get_action(state))  # epsilon-greedy 정책에 따른 행동 선택
 
-                next_state, reward, done = self.step(action)
+                next_state, reward, done = self.step(action)  # 선택한 행동 수행 및 결과 획득
                 score += reward
 
                 if self.train_mode:
-                    self.append_sample((state, action, reward, next_state, done))
-                    self.train_model(done)
+                    self.append_sample((state, action, reward, next_state, done))  # 경험 저장
+                    self.train_model(done)  # 모델 학습
 
                 state = next_state
                 if done:
@@ -180,13 +177,13 @@ class DQNAgent(Node):
                             'stage' + str(self.stage) + '_episode' + str(episode) + '.json'), 'w') as outfile:
                         json.dump(param_dictionary, outfile)
 
-    def env_make(self):
+    def env_make(self):  # env_make: ROS2 서비스 클라이언트를 통해 환경 생성 요청을 보낸다.
         while not self.make_environment_client.wait_for_service(timeout_sec=1.0):
             self.get_logger().warn('Environment make client failed to connect to the server, try again ...')
 
         self.make_environment_client.call_async(Empty.Request())
 
-    def reset_environment(self):
+    def reset_environment(self):  # reset_environment: ROS2 서비스를 통해 환경을 리셋하고, 초기 상태(state)를 반환한다.
         while not self.reset_environment_client.wait_for_service(timeout_sec=1.0):
             self.get_logger().warn('Reset environment client failed to connect to the server, try again ...')
 
@@ -195,15 +192,27 @@ class DQNAgent(Node):
         rclpy.spin_until_future_complete(self, future)
         if future.result() is not None:
             state = future.result().state
-            state = np.reshape(np.asarray(state), [1, self.state_size])
+            state = numpy.reshape(numpy.asarray(state), [1, self.state_size])
         else:
             self.get_logger().error(
                 'Exception while calling service: {0}'.format(future.exception()))
 
         return state
 
-    def step(self, action):
-        # Send action and receive next state and reward
+    def get_action(self, state):  # epsilon-greedy, 지수감쇠
+        if self.train_mode:
+            self.step_counter += 1
+            self.epsilon = self.epsilon_min + (1.0 - self.epsilon_min) * math.exp(
+                -1.0 * self.step_counter / self.epsilon_decay)
+            lucky = random.random()
+            if lucky > (1 - self.epsilon): # 앱실론 확률에 의해 (랜덤 행동 / 학습된 최적 행동) 선택
+                return random.randint(0, self.action_size - 1)
+            else:
+                return numpy.argmax(self.model.predict(state))
+        else:
+            return numpy.argmax(self.model.predict(state))
+
+    def step(self, action):  # step: 현재 상태에서 선택된 행동을 환경에 전달, (다음상태, 보상, 종료여부)를 반환받음
         req = Dqn.Request()
         req.action = action
 
@@ -215,16 +224,18 @@ class DQNAgent(Node):
         rclpy.spin_until_future_complete(self, future)
 
         if future.result() is not None:
-            # Next state and reward
             next_state = future.result().state
-            next_state = np.reshape(np.asarray(next_state), [1, self.state_size])
+            next_state = numpy.reshape(numpy.asarray(next_state), [1, self.state_size])
             reward = future.result().reward
             done = future.result().done
         else:
             self.get_logger().error(
                 'Exception while calling service: {0}'.format(future.exception()))
+        self.get_logger().info(f'Reward: {reward}')
+
         return next_state, reward, done
 
+# create_qnetwork: Keras Sequential 모델을 사용하여 Q-Network를 생성하고 컴파일
     def create_qnetwork(self):
         model = Sequential()
         model.add(Dense(512, input_shape=(self.state_size,), activation='relu'))
@@ -236,37 +247,24 @@ class DQNAgent(Node):
 
         return model
 
-    def update_target_model(self):
+    def update_target_model(self):  # 현재 Q-Network의 가중치를 타겟 네트워크에 복사하고 업데이트 카운터를 초기화
         self.target_model.set_weights(self.model.get_weights())
         self.target_update_after_counter = 0
         print("*Target model updated*")
 
-    def get_action(self, state):
-        if self.train_mode:
-            self.step_counter += 1
-            self.epsilon = self.epsilon_min + (1.0 - self.epsilon_min) * math.exp(
-                -1.0 * self.step_counter / self.epsilon_decay)
-            lucky = rnd.random()
-            if lucky > (1 - self.epsilon):
-                return rnd.randint(0, self.action_size - 1)
-            else:
-                return np.argmax(self.model.predict(state))
-        else:
-            return np.argmax(self.model.predict(state))
-
-    def append_sample(self, transition):
+    def append_sample(self, transition):  # append_sample: (상태, 행동, 보상, 다음 상태, 종료여부)로 구성된 경험을 리플레이 메모리에 추가
         self.replay_memory.append(transition)
 
-    def train_model(self, terminal):
+    def train_model(self, terminal):  # 충분한 경험이 쌓이면 미니배치 샘플링 후 Q-Network를 학습시키고, 에피소드 종료 시 타겟 네트워크 업데이트를 수행한다.
         if len(self.replay_memory) < self.min_replay_memory_size:
             return
-        data_in_mini_batch = rnd.sample(self.replay_memory, self.batch_size)
+        data_in_mini_batch = random.sample(self.replay_memory, self.batch_size)
 
-        current_states = np.array([transition[0] for transition in data_in_mini_batch])
+        current_states = numpy.array([transition[0] for transition in data_in_mini_batch])
         current_states = current_states.squeeze()
         current_qvalues_list = self.model.predict(current_states)
 
-        next_states = np.array([transition[3] for transition in data_in_mini_batch])
+        next_states = numpy.array([transition[3] for transition in data_in_mini_batch])
         next_states = next_states.squeeze()
         next_qvalues_list = self.target_model.predict(next_states)
 
@@ -275,7 +273,7 @@ class DQNAgent(Node):
 
         for index, (current_state, action, reward, next_state, done) in enumerate(data_in_mini_batch):
             if not done:
-                future_reward = np.max(next_qvalues_list[index])
+                future_reward = numpy.max(next_qvalues_list[index])
                 desired_q = reward + self.discount_factor * future_reward
             else:
                 desired_q = reward
@@ -286,10 +284,10 @@ class DQNAgent(Node):
             x_train.append(current_state)
             y_train.append(current_q_values)
 
-        x_train = np.array(x_train)
-        y_train = np.array(y_train)
-        x_train = np.reshape(x_train, [len(data_in_mini_batch), self.state_size])
-        y_train = np.reshape(y_train, [len(data_in_mini_batch), self.action_size])
+        x_train = numpy.array(x_train)
+        y_train = numpy.array(y_train)
+        x_train = numpy.reshape(x_train, [len(data_in_mini_batch), self.state_size])
+        y_train = numpy.reshape(y_train, [len(data_in_mini_batch), self.action_size])
 
         self.model.fit(
             tf.convert_to_tensor(x_train, tf.float32),
