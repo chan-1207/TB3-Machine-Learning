@@ -39,9 +39,8 @@ from turtlebot3_msgs.srv import Dqn
 
 
 tf.config.set_visible_devices([], 'GPU')
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'  # TensorFlow 로그 비활성화
 
-LOGGING = True
+LOGGING = False
 current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 dqn_reward_log_dir = 'logs/gradient_tape/' + current_time + '/dqn_stage4_usual_180_ray_yaw_reward'
 
@@ -65,8 +64,10 @@ class DQNMetric(tf.keras.metrics.Metric):
 
 
 class DQNAgent(Node):
+
     def __init__(self, stage):
         super().__init__('dqn_agent')
+
         self.stage = int(stage)
         self.train_mode = True
         # 수정: 환경에서 반환하는 state가 26개라면 state_size를 26으로 설정
@@ -231,7 +232,6 @@ class DQNAgent(Node):
         else:
             self.get_logger().error(
                 'Exception while calling service: {0}'.format(future.exception()))
-        self.get_logger().info(f'Reward: {reward}')
 
         return next_state, reward, done
 

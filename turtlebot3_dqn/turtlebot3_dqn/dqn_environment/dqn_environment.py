@@ -128,7 +128,11 @@ class RLEnvironment(Node):
             self.get_logger().info('goal initialized at [%f, %f]' % (self.goal_pose_x, self.goal_pose_y))
 
     def reset_environment_callback(self, request, response):  # return: 라이다 정보 + 목표까지 거리 + 각도
-        response.state = self.calculate_state()
+        state = self.calculate_state()
+        # 새로 생성된 골박스까지의 거리를 self.init_goal_distance로 업데이트
+        self.init_goal_distance = state[0]
+        self.get_logger().info(f"[Reset] 초기 goal_distance: {state[0]}")
+        response.state = state
         return response
 
     def call_task_succeed(self):  # 성공 시 목표 응답 대기
@@ -256,8 +260,8 @@ class RLEnvironment(Node):
                 reward = -5.0
             else:
                 reward = 0.0
-        self.get_logger().info('reward: %f ' % reward)
-        self.get_logger().info('yaw reward: %f ' % yaw_reward)
+        self.get_logger().info(f'reward: {reward}')
+        self.get_logger().info(f'angle: {self.goal_angle} yaw_reward: {yaw_reward} distance: {self.goal_distance} distance_reward: {distance_reward}')
 
         return reward
 
@@ -290,7 +294,7 @@ class RLEnvironment(Node):
         self.cmd_vel_pub.publish(Twist())
         self.destroy_timer(self.stop_cmd_vel_timer)
 
-    def euler_from_quaternion(self, quat):  # 오일러 각으로 변환
+    def euler_from_quaternion(self, quat):
         x = quat.x
         y = quat.y
         z = quat.z
