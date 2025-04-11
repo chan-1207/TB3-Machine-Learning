@@ -36,7 +36,7 @@ class GraphSubscriber(Node):
 
         self.subscription = self.create_subscription(
             Float32MultiArray,
-            'result',
+            '/result',
             self.data_callback,
             10
         )

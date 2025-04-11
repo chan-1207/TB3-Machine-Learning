@@ -130,7 +130,6 @@ class RLEnvironment(Node):
     def reset_environment_callback(self, request, response):  # return: 라이다 정보 + 목표까지 거리 + 각도
         state = self.calculate_state()
         self.init_goal_distance = state[0]
-        self.get_logger().info(f"[Reset] 초기 goal_distance: {state[0]}")
         response.state = state
         return response
 
@@ -260,8 +259,6 @@ class RLEnvironment(Node):
                 reward = -5.0
             else:
                 reward = 0.0
-        self.get_logger().info(f'reward: {reward}')
-        self.get_logger().info(f'angle: {self.goal_angle} yaw_reward: {yaw_reward} distance: {self.goal_distance} distance_reward: {distance_reward}')
 
         return reward
 

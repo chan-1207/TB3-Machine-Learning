@@ -123,6 +123,7 @@ class DQNAgent(Node):
         self.reset_environment_client = self.create_client(Dqn, 'reset_environment')
 
         self.action_pub = self.create_publisher(Float32MultiArray, '/get_action', 10)
+        self.result_pub = self.create_publisher(Float32MultiArray, 'result', 10)
 
         self.process()
 
@@ -131,20 +132,26 @@ class DQNAgent(Node):
         time.sleep(1.0)
 
         episode_num = 0
+        state = self.reset_environment()
 
         for episode in range(self.load_episode + 1, self.max_training_episodes):
             episode_num += 1
             local_step = 0
             score = 0
+            sum_max_q = 0.0  # 에피소드 내 max q-value 누적 합
 
-            state = self.reset_environment()  # 환경 리셋 후 초기 상태 획득
             time.sleep(1.0)
 
-            while True:
+            while True:  # 한 에피소드
                 local_step += 1
-                action = int(self.get_action(state))  # 행동 선택
 
-                next_state, reward, done = self.step(action)  # 선택한 행동 수행 및 결과 획득
+                # 모델이 출력하는 q-value들 중 최댓값을 가져와 누적
+                q_values = self.model.predict(state)
+                sum_max_q += float(numpy.max(q_values))
+
+                action = int(self.get_action(state))
+
+                next_state, reward, done = self.step(action)
                 score += reward
 
                 msg = Float32MultiArray()
@@ -152,12 +159,18 @@ class DQNAgent(Node):
                 self.action_pub.publish(msg)
 
                 if self.train_mode:
-                    self.append_sample((state, action, reward, next_state, done))  # 경험 저장
-                    self.train_model(done)  # 모델 학습
+                    self.append_sample((state, action, reward, next_state, done))
+                    self.train_model(done)
 
                 state = next_state
 
                 if done:
+                    avg_max_q = sum_max_q / local_step if local_step > 0 else 0.0
+
+                    msg = Float32MultiArray()
+                    msg.data = [float(score), float(avg_max_q)]
+                    self.result_pub.publish(msg)
+
                     if LOGGING:
                         self.dqn_reward_metric.update_state(score)
                         with self.dqn_reward_writer.as_default():
@@ -177,7 +190,6 @@ class DQNAgent(Node):
 
                 time.sleep(0.01)
 
-            # Update result and save model every 100 episodes
             if self.train_mode:
                 if episode % 100 == 0:
                     self.model_path = os.path.join(
