@@ -46,7 +46,7 @@ class RLEnvironment(Node):
         self.robot_pose_y = 0.0
 
         self.action_size = 5
-        self.time_out = 1000 # 최대 작업 수
+        self.max_step = 800 # 최대 작업 수
 
         self.done = False
         self.fail = False
@@ -82,13 +82,19 @@ class RLEnvironment(Node):
 
         self.clients_callback_group = MutuallyExclusiveCallbackGroup()
         self.task_succeed_client = self.create_client(
-            Goal, 'task_succeed', callback_group=self.clients_callback_group
+            Goal,
+            'task_succeed',
+            callback_group=self.clients_callback_group
         )
         self.task_failed_client = self.create_client(
-            Goal, 'task_failed', callback_group=self.clients_callback_group
+            Goal,
+            'task_failed',
+            callback_group=self.clients_callback_group
         )
         self.initialize_environment_client = self.create_client(
-            Goal, 'initialize_env', callback_group=self.clients_callback_group
+            Goal,
+            'initialize_env',
+            callback_group=self.clients_callback_group
         )
 
         self.rl_agent_interface_service = self.create_service(
@@ -108,28 +114,21 @@ class RLEnvironment(Node):
         )
 
     def make_environment_callback(self, request, response):
-        self.initialize_environment()
-        return response
-
-    def initialize_environment(self):  # 골 pose 받을 때까지 대기
         while not self.initialize_environment_client.wait_for_service(timeout_sec=1.0):
             self.get_logger().warn('service for initialize the environment is not available, waiting ...')
-
         future = self.initialize_environment_client.call_async(Goal.Request())
-
         rclpy.spin_until_future_complete(self, future)
-        response = future.result()
-        if not response.success:
+        response_goal = future.result()
+        if not response_goal.success:
             self.get_logger().error('initialize environment request failed')
-
         else:
-            self.goal_pose_x = response.pose_x
-            self.goal_pose_y = response.pose_y
+            self.goal_pose_x = response_goal.pose_x
+            self.goal_pose_y = response_goal.pose_y
             self.get_logger().info('goal initialized at [%f, %f]' % (self.goal_pose_x, self.goal_pose_y))
+        return response
 
     def reset_environment_callback(self, request, response):  # return: 라이다 정보 + 목표까지 거리 + 각도
         state = self.calculate_state()
-        # 새로 생성된 골박스까지의 거리를 self.init_goal_distance로 업데이트
         self.init_goal_distance = state[0]
         self.get_logger().info(f"[Reset] 초기 goal_distance: {state[0]}")
         response.state = state
@@ -140,7 +139,6 @@ class RLEnvironment(Node):
             self.get_logger().warn('service for task succeed is not available, waiting ...')
 
         future = self.task_succeed_client.call_async(Goal.Request())
-
         rclpy.spin_until_future_complete(self, future)
 
         if future.result() is not None:
@@ -225,13 +223,15 @@ class RLEnvironment(Node):
             self.get_logger().info("Collision happened")
             self.fail = True
             self.done = True
-            self.cmd_vel_pub.publish(Twist())  # robot stop
+            self.cmd_vel_pub.publish(Twist())
             self.local_step = 0
             self.call_task_failed()
 
-        if self.local_step == self.time_out:
+        if self.local_step == self.max_step:
             self.get_logger().info("Time out!")
+            self.fail = True
             self.done = True
+            self.cmd_vel_pub.publish(Twist())
             self.local_step = 0
             self.call_task_failed()
 
@@ -268,7 +268,6 @@ class RLEnvironment(Node):
     def rl_agent_interface_callback(self, request, response):  # 상태, 보상 및 완료를 응답으로 반환
         action = request.action
         twist = Twist()
-        # 일정한 선형 속도 + 가변 각속도을 받음
         twist.linear.x = 0.15
         twist.angular.z = self.angular_vel[action]
         self.cmd_vel_pub.publish(twist)

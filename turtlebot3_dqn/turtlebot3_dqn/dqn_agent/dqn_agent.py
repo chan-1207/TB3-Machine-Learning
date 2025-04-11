@@ -32,6 +32,7 @@ from keras.api.models import Sequential
 from keras.api.optimizers import Adam
 import rclpy
 from rclpy.node import Node
+from std_msgs.msg import Float32MultiArray
 from std_srvs.srv import Empty
 import tensorflow as tf
 
@@ -70,10 +71,13 @@ class DQNAgent(Node):
 
         self.stage = int(stage)
         self.train_mode = True
-        # 수정: 환경에서 반환하는 state가 26개라면 state_size를 26으로 설정
         self.state_size = 26
         self.action_size = 5
         self.max_training_episodes = 10003
+
+        self.done = False
+        self.succeed = False
+        self.fail = False
 
         # DQN 하이퍼파라미터 설정
         self.discount_factor = 0.99
@@ -118,6 +122,8 @@ class DQNAgent(Node):
         self.make_environment_client = self.create_client(Empty, 'make_environment')
         self.reset_environment_client = self.create_client(Dqn, 'reset_environment')
 
+        self.action_pub = self.create_publisher(Float32MultiArray, '/get_action', 10)
+
         self.process()
 
     def process(self):
@@ -136,16 +142,21 @@ class DQNAgent(Node):
 
             while True:
                 local_step += 1
-                action = int(self.get_action(state))  # epsilon-greedy 정책에 따른 행동 선택
+                action = int(self.get_action(state))  # 행동 선택
 
                 next_state, reward, done = self.step(action)  # 선택한 행동 수행 및 결과 획득
                 score += reward
+
+                msg = Float32MultiArray()
+                msg.data = [float(action), float(score), float(reward)]
+                self.action_pub.publish(msg)
 
                 if self.train_mode:
                     self.append_sample((state, action, reward, next_state, done))  # 경험 저장
                     self.train_model(done)  # 모델 학습
 
                 state = next_state
+
                 if done:
                     if LOGGING:
                         self.dqn_reward_metric.update_state(score)
@@ -184,7 +195,7 @@ class DQNAgent(Node):
 
         self.make_environment_client.call_async(Empty.Request())
 
-    def reset_environment(self):  # reset_environment: ROS2 서비스를 통해 환경을 리셋하고, 초기 상태(state)를 반환한다.
+    def reset_environment(self):  # reset_environment: ROS2 서비스를 통해 환경을 리셋하고, 초기 상태(state)를 반환
         while not self.reset_environment_client.wait_for_service(timeout_sec=1.0):
             self.get_logger().warn('Reset environment client failed to connect to the server, try again ...')
 
@@ -200,20 +211,22 @@ class DQNAgent(Node):
 
         return state
 
-    def get_action(self, state):  # epsilon-greedy, 지수감쇠
+    def get_action(self, state):  # angular_vel = [1.0, 0.5, 0.0, -0.5, -1.0]
         if self.train_mode:
             self.step_counter += 1
             self.epsilon = self.epsilon_min + (1.0 - self.epsilon_min) * math.exp(
                 -1.0 * self.step_counter / self.epsilon_decay)
             lucky = random.random()
             if lucky > (1 - self.epsilon): # 앱실론 확률에 의해 (랜덤 행동 / 학습된 최적 행동) 선택
-                return random.randint(0, self.action_size - 1)
+                result = random.randint(0, self.action_size - 1)
             else:
-                return numpy.argmax(self.model.predict(state))
+                result = numpy.argmax(self.model.predict(state))
         else:
-            return numpy.argmax(self.model.predict(state))
+            result = numpy.argmax(self.model.predict(state))
 
-    def step(self, action):  # step: 현재 상태에서 선택된 행동을 환경에 전달, (다음상태, 보상, 종료여부)를 반환받음
+        return result
+
+    def step(self, action):  # 선택된 행동을 환경에 전달, (다음상태, 보상, 종료여부)를 반환받음
         req = Dqn.Request()
         req.action = action
 
@@ -235,8 +248,7 @@ class DQNAgent(Node):
 
         return next_state, reward, done
 
-# create_qnetwork: Keras Sequential 모델을 사용하여 Q-Network를 생성하고 컴파일
-    def create_qnetwork(self):
+    def create_qnetwork(self):  # create_qnetwork: Keras Sequential 모델을 사용하여 Q-Network를 생성하고 컴파일
         model = Sequential()
         model.add(Dense(512, input_shape=(self.state_size,), activation='relu'))
         model.add(Dense(256, activation='relu'))
@@ -255,7 +267,7 @@ class DQNAgent(Node):
     def append_sample(self, transition):  # append_sample: (상태, 행동, 보상, 다음 상태, 종료여부)로 구성된 경험을 리플레이 메모리에 추가
         self.replay_memory.append(transition)
 
-    def train_model(self, terminal):  # 충분한 경험이 쌓이면 미니배치 샘플링 후 Q-Network를 학습시키고, 에피소드 종료 시 타겟 네트워크 업데이트를 수행한다.
+    def train_model(self, terminal):  # 충분한 경험이 쌓이면 미니배치 샘플링 후 Q-Network를 학습시키고, 에피소드 종료 시 타겟 네트워크 업데이트를 수행
         if len(self.replay_memory) < self.min_replay_memory_size:
             return
         data_in_mini_batch = random.sample(self.replay_memory, self.batch_size)

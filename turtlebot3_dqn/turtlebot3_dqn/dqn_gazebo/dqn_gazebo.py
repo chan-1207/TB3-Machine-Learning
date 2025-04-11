@@ -53,11 +53,23 @@ class GazeboInterface(Node):
 
         self.callback_group = MutuallyExclusiveCallbackGroup()
         self.initialize_env_service = self.create_service(
-            Goal, 'initialize_env', self.initialize_env_callback, callback_group=self.callback_group)
+            Goal,
+            'initialize_env',
+            self.initialize_env_callback,
+            callback_group=self.callback_group
+        )
         self.task_succeed_service = self.create_service(
-            Goal, 'task_succeed', self.task_succeed_callback, callback_group=self.callback_group)
+            Goal,
+            'task_succeed',
+            self.task_succeed_callback,
+            callback_group=self.callback_group
+        )
         self.task_failed_service = self.create_service(
-            Goal, 'task_failed', self.task_failed_callback, callback_group=self.callback_group)
+            Goal,
+            'task_failed',
+            self.task_failed_callback,
+            callback_group=self.callback_group
+        )
 
     def open_entity(self):
         try:
@@ -70,7 +82,7 @@ class GazeboInterface(Node):
             self.get_logger().error('Failed to load entity file: {}'.format(e))
             raise e
 
-    def reset_simulation(self):  # 실패 시
+    def reset_simulation(self):
         reset_req = Empty.Request()
 
         while not self.reset_simulation_client.wait_for_service(timeout_sec=1.0):
