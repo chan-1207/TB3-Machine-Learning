@@ -33,7 +33,6 @@ from turtlebot3_msgs.srv import Goal
 
 
 class GazeboInterface(Node):
-# rl_environment와 가제보 시뮬레이터 사이의 인터페이스 역할
 
     def __init__(self, stage):
         super().__init__('gazebo_interface')
@@ -99,7 +98,7 @@ class GazeboInterface(Node):
 
         future = self.delete_entity_client.call_async(delete_req)
         rclpy.spin_until_future_complete(self, future)
-        self.get_logger().info(f'Entity {self.entity_name} 삭제됨.')
+        self.get_logger().info('A goal deleted.')
 
     def spawn_entity(self):
         entity_pose = Pose()

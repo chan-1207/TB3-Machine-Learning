@@ -34,18 +34,18 @@ import rclpy
 from rclpy.node import Node
 from std_msgs.msg import Float32MultiArray
 from std_srvs.srv import Empty
-import tensorflow as tf
+import tensorflow
 
 from turtlebot3_msgs.srv import Dqn
 
 
-tf.config.set_visible_devices([], 'GPU')
+tensorflow.config.set_visible_devices([], 'GPU')
 
-LOGGING = False
+LOGGING = True
 current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 dqn_reward_log_dir = 'logs/gradient_tape/' + current_time + '/dqn_stage4_usual_180_ray_yaw_reward'
 
-class DQNMetric(tf.keras.metrics.Metric):
+class DQNMetric(tensorflow.keras.metrics.Metric):
 
     def __init__(self, name='dqn_metric'):
         super(DQNMetric, self).__init__(name=name)
@@ -73,7 +73,7 @@ class DQNAgent(Node):
         self.train_mode = True
         self.state_size = 26
         self.action_size = 5
-        self.max_training_episodes = 10003
+        self.max_training_episodes = 1000
 
         self.done = False
         self.succeed = False
@@ -115,7 +115,7 @@ class DQNAgent(Node):
                 self.epsilon = param.get('epsilon')
 
         if LOGGING:  # Tensorboard Log
-            self.dqn_reward_writer = tf.summary.create_file_writer(dqn_reward_log_dir)
+            self.dqn_reward_writer = tensorflow.summary.create_file_writer(dqn_reward_log_dir)
             self.dqn_reward_metric = DQNMetric()
 
         self.rl_agent_interface_client = self.create_client(Dqn, 'rl_agent_interface')
@@ -132,25 +132,23 @@ class DQNAgent(Node):
         time.sleep(1.0)
 
         episode_num = 0
-        state = self.reset_environment()
 
         for episode in range(self.load_episode + 1, self.max_training_episodes):
+            state = self.reset_environment()
             episode_num += 1
             local_step = 0
             score = 0
-            sum_max_q = 0.0  # 에피소드 내 max q-value 누적 합
+            sum_max_q = 0.0
 
             time.sleep(1.0)
 
-            while True:  # 한 에피소드
+            while True:
                 local_step += 1
 
-                # 모델이 출력하는 q-value들 중 최댓값을 가져와 누적
                 q_values = self.model.predict(state)
                 sum_max_q += float(numpy.max(q_values))
 
                 action = int(self.get_action(state))
-
                 next_state, reward, done = self.step(action)
                 score += reward
 
@@ -174,7 +172,7 @@ class DQNAgent(Node):
                     if LOGGING:
                         self.dqn_reward_metric.update_state(score)
                         with self.dqn_reward_writer.as_default():
-                            tf.summary.scalar('dqn_reward', self.dqn_reward_metric.result(), step=episode_num)
+                            tensorflow.summary.scalar('dqn_reward', self.dqn_reward_metric.result(), step=episode_num)
                         self.dqn_reward_metric.reset_states()
 
                     print(
@@ -201,13 +199,13 @@ class DQNAgent(Node):
                             'stage' + str(self.stage) + '_episode' + str(episode) + '.json'), 'w') as outfile:
                         json.dump(param_dictionary, outfile)
 
-    def env_make(self):  # env_make: ROS2 서비스 클라이언트를 통해 환경 생성 요청을 보낸다.
+    def env_make(self):
         while not self.make_environment_client.wait_for_service(timeout_sec=1.0):
             self.get_logger().warn('Environment make client failed to connect to the server, try again ...')
 
         self.make_environment_client.call_async(Empty.Request())
 
-    def reset_environment(self):  # reset_environment: ROS2 서비스를 통해 환경을 리셋하고, 초기 상태(state)를 반환
+    def reset_environment(self):
         while not self.reset_environment_client.wait_for_service(timeout_sec=1.0):
             self.get_logger().warn('Reset environment client failed to connect to the server, try again ...')
 
@@ -223,13 +221,13 @@ class DQNAgent(Node):
 
         return state
 
-    def get_action(self, state):  # angular_vel = [1.0, 0.5, 0.0, -0.5, -1.0]
+    def get_action(self, state):
         if self.train_mode:
             self.step_counter += 1
             self.epsilon = self.epsilon_min + (1.0 - self.epsilon_min) * math.exp(
-                -1.0 * self.step_counter / self.epsilon_decay)
+                -2.0 * self.step_counter / self.epsilon_decay)
             lucky = random.random()
-            if lucky > (1 - self.epsilon): # 앱실론 확률에 의해 (랜덤 행동 / 학습된 최적 행동) 선택
+            if lucky > (1 - self.epsilon):
                 result = random.randint(0, self.action_size - 1)
             else:
                 result = numpy.argmax(self.model.predict(state))
@@ -238,7 +236,7 @@ class DQNAgent(Node):
 
         return result
 
-    def step(self, action):  # 선택된 행동을 환경에 전달, (다음상태, 보상, 종료여부)를 반환받음
+    def step(self, action):
         req = Dqn.Request()
         req.action = action
 
@@ -260,7 +258,7 @@ class DQNAgent(Node):
 
         return next_state, reward, done
 
-    def create_qnetwork(self):  # create_qnetwork: Keras Sequential 모델을 사용하여 Q-Network를 생성하고 컴파일
+    def create_qnetwork(self):
         model = Sequential()
         model.add(Dense(512, input_shape=(self.state_size,), activation='relu'))
         model.add(Dense(256, activation='relu'))
@@ -271,7 +269,7 @@ class DQNAgent(Node):
 
         return model
 
-    def update_target_model(self):  # 현재 Q-Network의 가중치를 타겟 네트워크에 복사하고 업데이트 카운터를 초기화
+    def update_target_model(self):
         self.target_model.set_weights(self.model.get_weights())
         self.target_update_after_counter = 0
         print("*Target model updated*")
@@ -279,7 +277,7 @@ class DQNAgent(Node):
     def append_sample(self, transition):  # append_sample: (상태, 행동, 보상, 다음 상태, 종료여부)로 구성된 경험을 리플레이 메모리에 추가
         self.replay_memory.append(transition)
 
-    def train_model(self, terminal):  # 충분한 경험이 쌓이면 미니배치 샘플링 후 Q-Network를 학습시키고, 에피소드 종료 시 타겟 네트워크 업데이트를 수행
+    def train_model(self, terminal):
         if len(self.replay_memory) < self.min_replay_memory_size:
             return
         data_in_mini_batch = random.sample(self.replay_memory, self.batch_size)
@@ -314,8 +312,8 @@ class DQNAgent(Node):
         y_train = numpy.reshape(y_train, [len(data_in_mini_batch), self.action_size])
 
         self.model.fit(
-            tf.convert_to_tensor(x_train, tf.float32),
-            tf.convert_to_tensor(y_train, tf.float32),
+            tensorflow.convert_to_tensor(x_train, tensorflow.float32),
+            tensorflow.convert_to_tensor(y_train, tensorflow.float32),
             batch_size=self.batch_size, verbose=0
         )
         self.target_update_after_counter += 1

@@ -154,24 +154,17 @@ class Form(QWidget):
         qt_thread.signal_reward.connect(self.edit_reward.setText)
 
     def closeEvent(self, event):
-        # 창 종료 시에는 ROS2 노드와 스레드를 정리
         rclpy.shutdown()
         event.accept()
 
 
-# -------------------------------------------------
-# 4) main() 함수
-# -------------------------------------------------
 def main(args=None):
-    rclpy.init(args=args)  # ROS2 초기화
-    qt_thread = Thread()   # QThread (ROS2 spin)
-    qt_thread.start()      # 스레드 시작
-
-    # PyQt5 앱 구동
+    rclpy.init(args=args)
+    qt_thread = Thread()
+    qt_thread.start()
     app = QApplication(sys.argv)
     form = Form(qt_thread)
     form.show()
-
     exit_code = app.exec_()
     return exit_code
 

@@ -34,11 +34,9 @@ from turtlebot3_msgs.srv import Goal
 
 
 class RLEnvironment(Node):
-# rl_agent와 gazebo_interface 사이의 인터페이스 역할
 
     def __init__(self):
         super().__init__('rl_environment')
-        # train_mode = false -> test mode
         self.train_mode = True
         self.goal_pose_x = 0.0
         self.goal_pose_y = 0.0
@@ -46,7 +44,7 @@ class RLEnvironment(Node):
         self.robot_pose_y = 0.0
 
         self.action_size = 5
-        self.max_step = 800 # 최대 작업 수
+        self.max_step = 600 # 최대 작업 수
 
         self.done = False
         self.fail = False
@@ -61,7 +59,8 @@ class RLEnvironment(Node):
 
         self.local_step = 0
         self.stop_cmd_vel_timer = None
-        self.angular_vel = [1.0, 0.5, 0.0, -0.5, -1.0]
+        self.linear_vel = [0.08, 0.12, 0.15, 0.12, 0.08]
+        self.angular_vel = [1.2, 0.6, 0.0, -0.6, -1.2]
 
         qos = QoSProfile(depth=10)
 
@@ -130,6 +129,7 @@ class RLEnvironment(Node):
     def reset_environment_callback(self, request, response):  # return: 라이다 정보 + 목표까지 거리 + 각도
         state = self.calculate_state()
         self.init_goal_distance = state[0]
+        self.prev_goal_distance = self.init_goal_distance
         response.state = state
         return response
 
@@ -177,7 +177,7 @@ class RLEnvironment(Node):
 
         self.min_obstacle_distance = min(self.scan_ranges)
 
-    def odom_sub_callback(self, msg): # 목표까지 거리와 각도 계산
+    def odom_sub_callback(self, msg):
         self.robot_pose_x = msg.pose.pose.position.x
         self.robot_pose_y = msg.pose.pose.position.y
         _, _, self.robot_pose_theta = self.euler_from_quaternion(msg.pose.pose.orientation)
@@ -208,7 +208,6 @@ class RLEnvironment(Node):
             state.append(float(var))
         self.local_step += 1
 
-        # Succeed
         if self.goal_distance < 0.20:  # unit: m
             self.get_logger().info("Goal Reached")
             self.succeed = True
@@ -217,7 +216,6 @@ class RLEnvironment(Node):
             self.local_step = 0
             self.call_task_succeed()
 
-        # Fail
         if self.min_obstacle_distance < 0.25:  # unit: m
             self.get_logger().info("Collision happened")
             self.fail = True
@@ -236,18 +234,25 @@ class RLEnvironment(Node):
 
         return state
 
-    def calculate_reward(self, action): # 보상 계산, 리워드 함수 변경 가능
+    def calculate_reward(self):
         if self.train_mode:
-            yaw_reward = 1 - 2 * math.sqrt(math.fabs(self.goal_angle / math.pi))
+            if not hasattr(self, 'prev_goal_distance'):
+                self.prev_goal_distance = self.init_goal_distance
 
-            distance_reward = (2 * self.init_goal_distance) / (
-                self.init_goal_distance + self.goal_distance) - 1
+            yaw_reward = (1 - 2 * math.sqrt(math.fabs(self.goal_angle / math.pi))) / 10
+
+            delta_distance = self.prev_goal_distance - self.goal_distance
+            self.prev_goal_distance = self.goal_distance
+            distance_reward = delta_distance * 10
 
             obstacle_reward = 0.0
             if self.min_obstacle_distance < 0.50:
                 obstacle_reward = -1.0
 
             reward = distance_reward + obstacle_reward + yaw_reward
+            self.get_logger().info('reward: %f' % reward)
+            self.get_logger().info('distance_reward: %f' % distance_reward)
+            self.get_logger().info('angle_reward: %f' % yaw_reward)
             if self.succeed:
                 reward = 50.0
             elif self.fail:
@@ -265,17 +270,18 @@ class RLEnvironment(Node):
     def rl_agent_interface_callback(self, request, response):  # 상태, 보상 및 완료를 응답으로 반환
         action = request.action
         twist = Twist()
-        twist.linear.x = 0.15
+        twist.linear.x = self.linear_vel[action]
         twist.angular.z = self.angular_vel[action]
         self.cmd_vel_pub.publish(twist)
         if self.stop_cmd_vel_timer is None:
+            self.prev_goal_distance = self.init_goal_distance
             self.stop_cmd_vel_timer = self.create_timer(1.8, self.timer_callback)
         else:
             self.destroy_timer(self.stop_cmd_vel_timer)
             self.stop_cmd_vel_timer = self.create_timer(1.8, self.timer_callback)
 
         response.state = self.calculate_state()
-        response.reward = self.calculate_reward(action)
+        response.reward = self.calculate_reward()
         response.done = self.done
 
         if self.done is True:

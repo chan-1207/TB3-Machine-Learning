@@ -23,15 +23,14 @@ import random
 import sys
 import time
 
-from keras.api.layers import Activation
 from keras.api.layers import Dense
-from keras.api.layers import Dropout
 from keras.api.models import load_model
 from keras.api.models import Sequential
 from keras.api.optimizers import RMSprop
 import numpy
 import rclpy
 from rclpy.node import Node
+import tensorflow
 
 from turtlebot3_msgs.srv import Dqn
 
@@ -44,7 +43,7 @@ class DQNTest(Node):
         self.stage = int(stage)
 
         # State size and action size
-        self.state_size = 4
+        self.state_size = 26
         self.action_size = 5
         self.episode_size = 3000
 
@@ -67,23 +66,22 @@ class DQNTest(Node):
         # Load saved models
         self.load_model = True
         self.load_episode = 600
-        self.model_dir_path = os.path.dirname(os.path.realpath(__file__))
-        self.model_dir_path = self.model_dir_path.replace(
-            'turtlebot3_dqn/dqn_test',
-            'model')
+        base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
+        self.model_dir_path = os.path.join(base_dir, 'model')
         self.model_path = os.path.join(
             self.model_dir_path,
             'stage'+str(self.stage)+'_episode'+str(self.load_episode)+'.h5')
 
         if self.load_model:
-            self.model.set_weights(load_model(self.model_path).get_weights())
+            loaded_model = load_model(self.model_path, custom_objects={'mse': tensorflow.keras.losses.MeanSquaredError()})
+            self.model.set_weights(loaded_model.get_weights())
             with open(os.path.join(
                     self.model_dir_path,
                     'stage'+str(self.stage)+'_episode'+str(self.load_episode)+'.json')) as outfile:
                 param = json.load(outfile)
                 self.epsilon = param.get('epsilon')
 
-        self.dqn_com_client = self.create_client(Dqn, 'dqn_com')
+        self.rl_agent_interface_client = self.create_client(Dqn, 'rl_agent_interface')
 
         self.process()
 
@@ -118,10 +116,12 @@ class DQNTest(Node):
                 print(int(action))
                 req.action = action
                 req.init = init
-                while not self.dqn_com_client.wait_for_service(timeout_sec=1.0):
-                    self.get_logger().info('service not available, waiting again...')
+                while not self.rl_agent_interface_client.wait_for_service(timeout_sec=1.0):
+                    self.get_logger().info('rl_agent interface service not available, waiting again...')
 
-                future = self.dqn_com_client.call_async(req)
+                future = self.rl_agent_interface_client.call_async(req)
+
+                rclpy.spin_until_future_complete(self, future)
 
                 while rclpy.ok():
                     rclpy.spin_once(self)
@@ -144,15 +144,14 @@ class DQNTest(Node):
     def build_model(self):
         model = Sequential()
         model.add(Dense(
-            64,
+            512,
             input_shape=(self.state_size,),
             activation='relu',
             kernel_initializer='lecun_uniform'))
-        model.add(Dense(64, activation='relu', kernel_initializer='lecun_uniform'))
-        model.add(Dropout(0.2))
-        model.add(Dense(self.action_size, kernel_initializer='lecun_uniform'))
-        model.add(Activation('linear'))
-        model.compile(loss='mse', optimizer=RMSprop(lr=self.learning_rate, rho=0.9, epsilon=1e-06))
+        model.add(Dense(256, activation='relu', kernel_initializer='lecun_uniform'))
+        model.add(Dense(128, activation='relu', kernel_initializer='lecun_uniform'))
+        model.add(Dense(self.action_size, activation='linear', kernel_initializer='lecun_uniform'))
+        model.compile(loss='mse', optimizer=RMSprop(learning_rate=self.learning_rate, rho=0.9, epsilon=1e-06))
         model.summary()
 
         return model
@@ -204,12 +203,16 @@ class DQNTest(Node):
         self.model.fit(x_batch, y_batch, batch_size=self.batch_size, epochs=1, verbose=0)
 
 
-def main(args=sys.argv[1]):
+def main(args=None):
+    if args is None:
+        args = sys.argv
+    stage = args[1] if len(args) > 1 else '1'
     rclpy.init(args=args)
-    dqn_test = DQNTest(args)
+
+    dqn_test = DQNTest(stage)
     rclpy.spin(dqn_test)
 
-    dqn_test.destroy()
+    dqn_test.destroy_node()
     rclpy.shutdown()
 
 
