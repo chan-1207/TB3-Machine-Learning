@@ -18,6 +18,7 @@
 import sys
 import pickle
 import threading
+
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import Float32MultiArray
@@ -26,7 +27,6 @@ from PyQt5.QtCore import QTimer
 import pyqtgraph
 
 
-# ROS2 Subscriber 노드 (GUI 업데이트를 위해 윈도우 인스턴스를 참조)
 class GraphSubscriber(Node):
 
     def __init__(self, window):
@@ -40,7 +40,7 @@ class GraphSubscriber(Node):
             self.data_callback,
             10
         )
-        self.subscription  # 참조를 유지
+        self.subscription
 
     def data_callback(self, msg):
         self.window.receive_data(msg)
@@ -53,7 +53,6 @@ class Window(QMainWindow):
         self.setWindowTitle("Result")
         self.setGeometry(50, 50, 600, 650)
 
-        # 데이터 저장 변수
         self.ep = []
         self.data_list = []
         self.rewards = []
@@ -68,7 +67,9 @@ class Window(QMainWindow):
         self.plot()
 
         self.ros_subscriber = GraphSubscriber(self)
-        self.ros_thread = threading.Thread(target=rclpy.spin, args=(self.ros_subscriber,), daemon=True)
+        self.ros_thread = threading.Thread(
+            target=rclpy.spin, args=(self.ros_subscriber,), daemon=True
+        )
         self.ros_thread.start()
 
     def receive_data(self, msg):
@@ -121,7 +122,6 @@ class Window(QMainWindow):
 def main():
     rclpy.init()
     app = QApplication(sys.argv)
-    win = Window()
     sys.exit(app.exec())
 
 

@@ -14,7 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-# Authors: Ryan Shim, Gilbert
+# Authors: Ryan Shim, Gilbert, ChanHyeong Lee
 
 import math
 
@@ -26,8 +26,8 @@ from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 from rclpy.node import Node
 from rclpy.qos import QoSProfile
 from rclpy.qos import qos_profile_sensor_data
-from std_srvs.srv import Empty
 from sensor_msgs.msg import LaserScan
+from std_srvs.srv import Empty
 
 from turtlebot3_msgs.srv import Dqn
 from turtlebot3_msgs.srv import Goal
@@ -44,13 +44,12 @@ class RLEnvironment(Node):
         self.robot_pose_y = 0.0
 
         self.action_size = 5
-        self.max_step = 600 # 최대 작업 수
+        self.max_step = 600
 
         self.done = False
         self.fail = False
         self.succeed = False
 
-        # 리워드 pram
         self.goal_angle = 0.0
         self.goal_distance = 1.0
         self.init_goal_distance = 0.5
@@ -59,8 +58,8 @@ class RLEnvironment(Node):
 
         self.local_step = 0
         self.stop_cmd_vel_timer = None
-        self.linear_vel = [0.08, 0.12, 0.15, 0.12, 0.08]
-        self.angular_vel = [1.2, 0.6, 0.0, -0.6, -1.2]
+        self.linear_vel = [0.1, 0.12, 0.15, 0.12, 0.1]
+        self.angular_vel = [1.0, 0.5, 0.0, -0.5, -1.0]
 
         qos = QoSProfile(depth=10)
 
@@ -114,7 +113,9 @@ class RLEnvironment(Node):
 
     def make_environment_callback(self, request, response):
         while not self.initialize_environment_client.wait_for_service(timeout_sec=1.0):
-            self.get_logger().warn('service for initialize the environment is not available, waiting ...')
+            self.get_logger().warn(
+                'service for initialize the environment is not available, waiting ...'
+            )
         future = self.initialize_environment_client.call_async(Goal.Request())
         rclpy.spin_until_future_complete(self, future)
         response_goal = future.result()
@@ -123,23 +124,25 @@ class RLEnvironment(Node):
         else:
             self.goal_pose_x = response_goal.pose_x
             self.goal_pose_y = response_goal.pose_y
-            self.get_logger().info('goal initialized at [%f, %f]' % (self.goal_pose_x, self.goal_pose_y))
+            self.get_logger().info(
+                'goal initialized at [%f, %f]' % (self.goal_pose_x, self.goal_pose_y)
+            )
+
         return response
 
-    def reset_environment_callback(self, request, response):  # return: 라이다 정보 + 목표까지 거리 + 각도
+    def reset_environment_callback(self, request, response):
         state = self.calculate_state()
         self.init_goal_distance = state[0]
         self.prev_goal_distance = self.init_goal_distance
         response.state = state
+
         return response
 
-    def call_task_succeed(self):  # 성공 시 목표 응답 대기
+    def call_task_succeed(self):
         while not self.task_succeed_client.wait_for_service(timeout_sec=1.0):
             self.get_logger().warn('service for task succeed is not available, waiting ...')
-
         future = self.task_succeed_client.call_async(Goal.Request())
         rclpy.spin_until_future_complete(self, future)
-
         if future.result() is not None:
             response = future.result()
             self.goal_pose_x = response.pose_x
@@ -148,13 +151,11 @@ class RLEnvironment(Node):
         else:
             self.get_logger().error('task succeed service call failed')
 
-    def call_task_failed(self):  # 실패 시 목표 응답 대기
+    def call_task_failed(self):
         while not self.task_failed_client.wait_for_service(timeout_sec=1.0):
             self.get_logger().warn('service for task failed is not available, waiting ...')
-
         future = self.task_failed_client.call_async(Goal.Request())
         rclpy.spin_until_future_complete(self, future)
-
         if future.result() is not None:
             response = future.result()
             self.goal_pose_x = response.pose_x
@@ -199,7 +200,7 @@ class RLEnvironment(Node):
         self.goal_distance = goal_distance
         self.goal_angle = goal_angle
 
-    def calculate_state(self):  # 라이다, 목표까지 거리, 각도 계산, 작업 성공 여부
+    def calculate_state(self):
         state = list()
         state.append(float(self.goal_distance))
         state.append(float(self.goal_angle))
@@ -208,15 +209,15 @@ class RLEnvironment(Node):
             state.append(float(var))
         self.local_step += 1
 
-        if self.goal_distance < 0.20:  # unit: m
+        if self.goal_distance < 0.20:
             self.get_logger().info("Goal Reached")
             self.succeed = True
             self.done = True
-            self.cmd_vel_pub.publish(Twist())  # robot stop
+            self.cmd_vel_pub.publish(Twist())
             self.local_step = 0
             self.call_task_succeed()
 
-        if self.min_obstacle_distance < 0.25:  # unit: m
+        if self.min_obstacle_distance < 0.15:
             self.get_logger().info("Collision happened")
             self.fail = True
             self.done = True
@@ -236,27 +237,29 @@ class RLEnvironment(Node):
 
     def calculate_reward(self):
         if self.train_mode:
+
             if not hasattr(self, 'prev_goal_distance'):
                 self.prev_goal_distance = self.init_goal_distance
-
-            yaw_reward = (1 - 2 * math.sqrt(math.fabs(self.goal_angle / math.pi))) / 10
 
             delta_distance = self.prev_goal_distance - self.goal_distance
             self.prev_goal_distance = self.goal_distance
             distance_reward = delta_distance * 10
 
+            yaw_reward = (1 - 2 * math.sqrt(math.fabs(self.goal_angle / math.pi))) / 5
+
             obstacle_reward = 0.0
             if self.min_obstacle_distance < 0.50:
                 obstacle_reward = -1.0
 
-            reward = distance_reward + obstacle_reward + yaw_reward
-            self.get_logger().info('reward: %f' % reward)
+            reward = distance_reward + yaw_reward + obstacle_reward
             self.get_logger().info('distance_reward: %f' % distance_reward)
             self.get_logger().info('angle_reward: %f' % yaw_reward)
+
             if self.succeed:
-                reward = 50.0
+                reward = 30.0
             elif self.fail:
                 reward = -10.0
+
         else:
             if self.succeed:
                 reward = 5.0
@@ -267,7 +270,7 @@ class RLEnvironment(Node):
 
         return reward
 
-    def rl_agent_interface_callback(self, request, response):  # 상태, 보상 및 완료를 응답으로 반환
+    def rl_agent_interface_callback(self, request, response):
         action = request.action
         twist = Twist()
         twist.linear.x = self.linear_vel[action]
@@ -318,12 +321,10 @@ class RLEnvironment(Node):
 
 def main(args=None):
     rclpy.init(args=args)
-
     rl_environment = RLEnvironment()
-
     try:
         while rclpy.ok():
-            rclpy.spin_once(rl_environment)
+            rclpy.spin_once(rl_environment, timeout_sec=0.1)
     except KeyboardInterrupt:
         pass
     finally:

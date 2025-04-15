@@ -19,6 +19,7 @@
 import os
 import random
 import sys
+import time
 
 from ament_index_python.packages import get_package_share_directory
 from gazebo_msgs.srv import DeleteEntity
@@ -73,7 +74,9 @@ class GazeboInterface(Node):
     def open_entity(self):
         try:
             package_share = get_package_share_directory('turtlebot3_gazebo')
-            model_path = os.path.join(package_share, 'models', 'turtlebot3_dqn_world', 'goal_box', 'model.sdf')
+            model_path = os.path.join(
+                package_share, 'models', 'turtlebot3_dqn_world', 'goal_box', 'model.sdf'
+            )
             with open(model_path, 'r') as f:
                 self.entity = f.read()
             self.get_logger().info('Loaded entity from: ' + model_path)
@@ -118,7 +121,9 @@ class GazeboInterface(Node):
 
     def task_succeed_callback(self, request, response):
         self.delete_entity()
+        time.sleep(0.2)
         self.generate_goal_pose()
+        time.sleep(0.2)
         self.spawn_entity()
         response.pose_x = self.entity_pose_x
         response.pose_y = self.entity_pose_y
@@ -128,8 +133,11 @@ class GazeboInterface(Node):
 
     def task_failed_callback(self, request, response):
         self.delete_entity()
+        time.sleep(0.2)
         self.reset_simulation()
+        time.sleep(0.2)
         self.generate_goal_pose()
+        time.sleep(0.2)
         self.spawn_entity()
         response.pose_x = self.entity_pose_x
         response.pose_y = self.entity_pose_y
@@ -139,7 +147,9 @@ class GazeboInterface(Node):
 
     def initialize_env_callback(self, request, response):
         self.delete_entity()
+        time.sleep(0.2)
         self.reset_simulation()
+        time.sleep(0.2)
         self.spawn_entity()
         response.pose_x = self.entity_pose_x
         response.pose_y = self.entity_pose_y
@@ -151,7 +161,7 @@ class GazeboInterface(Node):
         if self.stage != 4:
             self.entity_pose_x = random.randrange(-23, 23) / 10
             self.entity_pose_y = random.randrange(-23, 23) / 10
-        else:  # stage 4는 고정된 목표 위치
+        else:
             goal_pose_list = [
                 [1.0, 0.0], [2.0, -1.5], [0.0, -2.0], [2.0, 2.0], [0.8, 2.0], [-1.9, 1.9],
                 [-1.9, 0.2], [-1.9, -0.5], [-2.0, -2.0], [-0.5, -1.0], [-0.5, 2.0], [2.0, -0.5]

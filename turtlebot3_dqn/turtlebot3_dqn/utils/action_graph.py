@@ -16,17 +16,23 @@
 #################################################################################
 
 import sys
+
+from PyQt5.QtWidgets import QApplication
+from PyQt5.QtWidgets import QGridLayout
+from PyQt5.QtWidgets import QLabel
+from PyQt5.QtWidgets import QLineEdit
+from PyQt5.QtWidgets import QProgressBar
+from PyQt5.QtWidgets import QWidget
+from PyQt5.QtCore import pyqtSignal
+from PyQt5.QtCore import Qt
+from PyQt5.QtCore import QThread
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import Float32MultiArray
 
-from PyQt5.QtWidgets import (
-    QWidget, QProgressBar, QLabel, QLineEdit,
-    QGridLayout, QApplication
-)
-from PyQt5.QtCore import Qt, QThread, pyqtSignal
 
 class Ros2Subscriber(Node):
+
     def __init__(self, qt_thread):
         super().__init__('progress_subscriber')
         self.qt_thread = qt_thread

@@ -45,6 +45,7 @@ LOGGING = True
 current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 dqn_reward_log_dir = 'logs/gradient_tape/' + current_time + '/dqn_stage4_usual_180_ray_yaw_reward'
 
+
 class DQNMetric(tensorflow.keras.metrics.Metric):
 
     def __init__(self, name='dqn_metric'):
@@ -79,7 +80,6 @@ class DQNAgent(Node):
         self.succeed = False
         self.fail = False
 
-        # DQN 하이퍼파라미터 설정
         self.discount_factor = 0.99
         self.learning_rate = 0.0007
         self.epsilon = 1.0
@@ -91,7 +91,6 @@ class DQNAgent(Node):
         self.replay_memory = collections.deque(maxlen=500000)
         self.min_replay_memory_size = 5000
 
-        # Q-Network 및 타겟 네트워크 생성, 초기 업데이트 수행
         self.model = self.create_qnetwork()
         self.target_model = self.create_qnetwork()
         self.update_target_model()
@@ -103,7 +102,9 @@ class DQNAgent(Node):
         self.model_dir_path = os.path.dirname(os.path.realpath(__file__))
         self.model_dir_path = self.model_dir_path.replace('turtlebot3_dqn/dqn_agent', 'model')
         self.model_path = os.path.join(
-            self.model_dir_path, 'stage' + str(self.stage) + '_episode' + str(self.load_episode) + '.h5')
+            self.model_dir_path,
+            'stage' + str(self.stage) + '_episode' + str(self.load_episode) + '.h5'
+        )
 
         if self.load_model:
             self.model.set_weights(load_model(self.model_path).get_weights())
@@ -114,7 +115,7 @@ class DQNAgent(Node):
                 param = json.load(outfile)
                 self.epsilon = param.get('epsilon')
 
-        if LOGGING:  # Tensorboard Log
+        if LOGGING:
             self.dqn_reward_writer = tensorflow.summary.create_file_writer(dqn_reward_log_dir)
             self.dqn_reward_metric = DQNMetric()
 
@@ -172,7 +173,9 @@ class DQNAgent(Node):
                     if LOGGING:
                         self.dqn_reward_metric.update_state(score)
                         with self.dqn_reward_writer.as_default():
-                            tensorflow.summary.scalar('dqn_reward', self.dqn_reward_metric.result(), step=episode_num)
+                            tensorflow.summary.scalar(
+                                'dqn_reward', self.dqn_reward_metric.result(), step=episode_num
+                            )
                         self.dqn_reward_metric.reset_states()
 
                     print(
@@ -194,20 +197,28 @@ class DQNAgent(Node):
                         self.model_dir_path,
                         'stage' + str(self.stage) + '_episode' + str(episode) + '.h5')
                     self.model.save(self.model_path)
-                    with open(os.path.join(
+                    with open(
+                        os.path.join(
                             self.model_dir_path,
-                            'stage' + str(self.stage) + '_episode' + str(episode) + '.json'), 'w') as outfile:
+                            'stage' + str(self.stage) + '_episode' + str(episode) + '.json'
+                        ),
+                        'w'
+                    ) as outfile:
                         json.dump(param_dictionary, outfile)
 
     def env_make(self):
         while not self.make_environment_client.wait_for_service(timeout_sec=1.0):
-            self.get_logger().warn('Environment make client failed to connect to the server, try again ...')
+            self.get_logger().warn(
+                'Environment make client failed to connect to the server, try again ...'
+            )
 
         self.make_environment_client.call_async(Empty.Request())
 
     def reset_environment(self):
         while not self.reset_environment_client.wait_for_service(timeout_sec=1.0):
-            self.get_logger().warn('Reset environment client failed to connect to the server, try again ...')
+            self.get_logger().warn(
+                'Reset environment client failed to connect to the server, try again ...'
+            )
 
         future = self.reset_environment_client.call_async(Dqn.Request())
 
@@ -225,7 +236,7 @@ class DQNAgent(Node):
         if self.train_mode:
             self.step_counter += 1
             self.epsilon = self.epsilon_min + (1.0 - self.epsilon_min) * math.exp(
-                -2.0 * self.step_counter / self.epsilon_decay)
+                -1.0 * self.step_counter / self.epsilon_decay)
             lucky = random.random()
             if lucky > (1 - self.epsilon):
                 result = random.randint(0, self.action_size - 1)
@@ -274,7 +285,7 @@ class DQNAgent(Node):
         self.target_update_after_counter = 0
         print("*Target model updated*")
 
-    def append_sample(self, transition):  # append_sample: (상태, 행동, 보상, 다음 상태, 종료여부)로 구성된 경험을 리플레이 메모리에 추가
+    def append_sample(self, transition):
         self.replay_memory.append(transition)
 
     def train_model(self, terminal):
@@ -293,18 +304,21 @@ class DQNAgent(Node):
         x_train = []
         y_train = []
 
-        for index, (current_state, action, reward, next_state, done) in enumerate(data_in_mini_batch):
+        for index, (current_state, action, reward, next_state, done) in enumerate(
+            data_in_mini_batch
+        ):
+            current_q_values = current_qvalues_list[index]
+
             if not done:
                 future_reward = numpy.max(next_qvalues_list[index])
                 desired_q = reward + self.discount_factor * future_reward
             else:
                 desired_q = reward
 
-            current_q_values = current_qvalues_list[index]
-            current_q_values[action] = desired_q
+                current_q_values[action] = desired_q
 
-            x_train.append(current_state)
-            y_train.append(current_q_values)
+                x_train.append(current_state)
+                y_train.append(current_q_values)
 
         x_train = numpy.array(x_train)
         y_train = numpy.array(y_train)

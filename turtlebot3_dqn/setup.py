@@ -1,20 +1,17 @@
-import os
+import glob
 
-from glob import glob
-
-from setuptools import find_packages
 from setuptools import setup
 
 package_name = 'turtlebot3_dqn'
 
 setup(
     name=package_name,
-    version='2.0.0',
-    packages=find_packages(),
+    version='2.0.1',
+    packages=[package_name],
     data_files=[
         ('share/ament_index/resource_index/packages', ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
-        ('share/' + package_name + '/launch', glob('launch/*.launch.py')),
+        ('share/' + package_name + '/launch', glob.glob('launch/*.launch.py')),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
@@ -22,7 +19,7 @@ setup(
     author_email=['kkjong@robotis.com', 'jhshim@robotis.com', 'dddoggi1207@gmail.com'],
     maintainer='Pyo',
     maintainer_email='pyo@robotis.com',
-    keywords=['ROS', 'ROS2', 'examples', 'rclpy'],
+    keywords=['ROS', 'ROS2', 'rclpy'],
     classifiers=[
         'Intended Audience :: Developers',
         'License :: OSI Approved :: Apache Software License',
@@ -30,7 +27,7 @@ setup(
         'Topic :: Software Development',
     ],
     description=(
-        'DQN for TurtleBot3.'
+        'ROS 2 package for turtlebot3_dqn.'
     ),
     license='Apache License, Version 2.0',
     entry_points={

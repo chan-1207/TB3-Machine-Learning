@@ -41,13 +41,10 @@ class DQNTest(Node):
         super().__init__('dqn_test')
 
         self.stage = int(stage)
-
-        # State size and action size
         self.state_size = 26
         self.action_size = 5
         self.episode_size = 3000
 
-        # DQN hyperparameter
         self.discount_factor = 0.99
         self.learning_rate = 0.00025
         self.epsilon = 1.0
@@ -56,14 +53,11 @@ class DQNTest(Node):
         self.batch_size = 64
         self.train_start = 64
 
-        # Replay memory
         self.memory = collections.deque(maxlen=1000000)
 
-        # Build model and target model
         self.model = self.build_model()
         self.target_model = self.build_model()
 
-        # Load saved models
         self.load_model = True
         self.load_episode = 600
         base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
@@ -73,7 +67,9 @@ class DQNTest(Node):
             'stage'+str(self.stage)+'_episode'+str(self.load_episode)+'.h5')
 
         if self.load_model:
-            loaded_model = load_model(self.model_path, custom_objects={'mse': tensorflow.keras.losses.MeanSquaredError()})
+            loaded_model = load_model(
+                self.model_path, custom_objects={'mse': tensorflow.keras.losses.MeanSquaredError()}
+            )
             self.model.set_weights(loaded_model.get_weights())
             with open(os.path.join(
                     self.model_dir_path,
@@ -98,34 +94,33 @@ class DQNTest(Node):
             init = True
             score = 0
 
-            # Reset DQN environment
             time.sleep(1.0)
 
             while not done:
                 local_step += 1
-
-                # Aciton based on the current state
                 if local_step == 1:
-                    action = 2  # Move forward
+                    action = 2
                 else:
                     state = next_state
                     action = int(self.get_action(state))
 
-                # Send action and receive next state and reward
                 req = Dqn.Request()
                 print(int(action))
                 req.action = action
                 req.init = init
+
                 while not self.rl_agent_interface_client.wait_for_service(timeout_sec=1.0):
-                    self.get_logger().info('rl_agent interface service not available, waiting again...')
-
+                    self.get_logger().info(
+                        'rl_agent interface service not available, waiting again...'
+                    )
                 future = self.rl_agent_interface_client.call_async(req)
-
                 rclpy.spin_until_future_complete(self, future)
 
                 while rclpy.ok():
                     rclpy.spin_once(self)
+
                     if future.done():
+
                         if future.result() is not None:
                             # Next state and reward
                             next_state = future.result().state
@@ -136,9 +131,9 @@ class DQNTest(Node):
                         else:
                             self.get_logger().error(
                                 'Exception while calling service: {0}'.format(future.exception()))
+
                         break
 
-                # While loop rate
                 time.sleep(0.01)
 
     def build_model(self):
@@ -151,7 +146,9 @@ class DQNTest(Node):
         model.add(Dense(256, activation='relu', kernel_initializer='lecun_uniform'))
         model.add(Dense(128, activation='relu', kernel_initializer='lecun_uniform'))
         model.add(Dense(self.action_size, activation='linear', kernel_initializer='lecun_uniform'))
-        model.compile(loss='mse', optimizer=RMSprop(learning_rate=self.learning_rate, rho=0.9, epsilon=1e-06))
+        model.compile(
+            loss='mse', optimizer=RMSprop(learning_rate=self.learning_rate, rho=0.9, epsilon=1e-06)
+        )
         model.summary()
 
         return model
@@ -191,7 +188,6 @@ class DQNTest(Node):
                 next_q_value = reward + self.discount_factor * numpy.amax(target_value)
 
             x_batch = numpy.append(x_batch, numpy.array([state.copy()]), axis=0)
-
             y_sample = q_value.copy()
             y_sample[0][action] = next_q_value
             y_batch = numpy.append(y_batch, numpy.array([y_sample[0]]), axis=0)
@@ -208,12 +204,15 @@ def main(args=None):
         args = sys.argv
     stage = args[1] if len(args) > 1 else '1'
     rclpy.init(args=args)
-
     dqn_test = DQNTest(stage)
-    rclpy.spin(dqn_test)
-
-    dqn_test.destroy_node()
-    rclpy.shutdown()
+    try:
+        while rclpy.ok():
+            rclpy.spin_once(dqn_test, timeout_sec=0.1)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        dqn_test.destroy_node()
+        rclpy.shutdown()
 
 
 if __name__ == '__main__':
