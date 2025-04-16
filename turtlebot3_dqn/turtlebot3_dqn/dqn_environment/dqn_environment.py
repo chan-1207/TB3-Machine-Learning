@@ -44,7 +44,7 @@ class RLEnvironment(Node):
         self.robot_pose_y = 0.0
 
         self.action_size = 5
-        self.max_step = 600
+        self.max_step = 800
 
         self.done = False
         self.fail = False

@@ -67,14 +67,14 @@ class DQNMetric(tensorflow.keras.metrics.Metric):
 
 class DQNAgent(Node):
 
-    def __init__(self, stage):
+    def __init__(self, stage, max_training_episodes):
         super().__init__('dqn_agent')
 
         self.stage = int(stage)
         self.train_mode = True
         self.state_size = 26
         self.action_size = 5
-        self.max_training_episodes = 1000
+        self.max_training_episodes = int(max_training_episodes)
 
         self.done = False
         self.succeed = False
@@ -84,7 +84,7 @@ class DQNAgent(Node):
         self.learning_rate = 0.0007
         self.epsilon = 1.0
         self.step_counter = 0
-        self.epsilon_decay = 20000 * self.stage
+        self.epsilon_decay = 20000
         self.epsilon_min = 0.05
         self.batch_size = 128
 
@@ -114,6 +114,7 @@ class DQNAgent(Node):
             )) as outfile:
                 param = json.load(outfile)
                 self.epsilon = param.get('epsilon')
+                self.step_counter = param.get('step_counter')
 
         if LOGGING:
             self.dqn_reward_writer = tensorflow.summary.create_file_writer(dqn_reward_log_dir)
@@ -132,7 +133,7 @@ class DQNAgent(Node):
         self.env_make()
         time.sleep(1.0)
 
-        episode_num = 0
+        episode_num = self.load_episode
 
         for episode in range(self.load_episode + 1, self.max_training_episodes):
             state = self.reset_environment()
@@ -184,8 +185,8 @@ class DQNAgent(Node):
                         "memory length:", len(self.replay_memory),
                         "epsilon:", self.epsilon)
 
-                    param_keys = ['epsilon']
-                    param_values = [self.epsilon]
+                    param_keys = ['epsilon', 'step']
+                    param_values = [self.epsilon, self.step_counter]
                     param_dictionary = dict(zip(param_keys, param_values))
                     break
 
@@ -304,9 +305,7 @@ class DQNAgent(Node):
         x_train = []
         y_train = []
 
-        for index, (current_state, action, reward, next_state, done) in enumerate(
-            data_in_mini_batch
-        ):
+        for index, (current_state, action, reward, _, done) in enumerate(data_in_mini_batch):
             current_q_values = current_qvalues_list[index]
 
             if not done:
@@ -315,10 +314,9 @@ class DQNAgent(Node):
             else:
                 desired_q = reward
 
-                current_q_values[action] = desired_q
-
-                x_train.append(current_state)
-                y_train.append(current_q_values)
+            current_q_values[action] = desired_q
+            x_train.append(current_state)
+            y_train.append(current_q_values)
 
         x_train = numpy.array(x_train)
         y_train = numpy.array(y_train)
@@ -340,9 +338,10 @@ def main(args=None):
     if args is None:
         args = sys.argv
     stage = args[1] if len(args) > 1 else '1'
+    max_training_episodes = args[2] if len(args) > 2 else '1000001'
     rclpy.init(args=args)
 
-    dqn_agent = DQNAgent(stage)
+    dqn_agent = DQNAgent(stage, max_training_episodes)
     rclpy.spin(dqn_agent)
 
     dqn_agent.destroy_node()
