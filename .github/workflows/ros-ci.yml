@@ -49,12 +49,6 @@ jobs:
         with:
           required-ros-distributions: ${{ matrix.ros_distribution }}
 
-      - name: Install Python dependencies
-        run: |
-          pip install --upgrade pip --break-system-packages
-          cd ros_ws/src/turtlebot3_dqn
-          pip install . --break-system-packages
-
       - name: Build and Test
         uses: ros-tooling/action-ros-ci@v0.3
 
