@@ -49,10 +49,14 @@ jobs:
         with:
           required-ros-distributions: ${{ matrix.ros_distribution }}
 
+      - name: Check directory structure
+        run: |
+          ls -R ros_ws/src  # 디렉토리 구조 확인
+
       - name: Install Python dependencies
         run: |
           pip install --upgrade pip
-          cd ros_ws/src/turtlebot3_machine_learning/turtlebot3_dqn
+          cd ros_ws/src/turtlebot3_machine_learning/turtlebot3_dqn  # 정확한 경로로 이동
           pip install .
 
       - name: Build and Test
