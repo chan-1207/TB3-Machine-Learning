@@ -49,10 +49,6 @@ jobs:
         with:
           required-ros-distributions: ${{ matrix.ros_distribution }}
 
-      - name: Check directory structure
-        run: |
-          ls -R ros_ws/src  # 디렉토리 구조 확인
-
       - name: Install Python dependencies
         run: |
           pip install --upgrade pip

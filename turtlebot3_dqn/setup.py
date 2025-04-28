@@ -23,12 +23,10 @@ setup(
     ],
     install_requires=[
         'setuptools',
-        'launch',
         'keras==3.9.2',
         'numpy==1.26.4',
         'scipy==1.10.1',
         'tensorflow==2.19.0',
-        'flowdas-meta>=1.0.1,<1.1',
     ],
     zip_safe=True,
     author=authors,
