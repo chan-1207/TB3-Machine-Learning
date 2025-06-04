@@ -1,16 +1,12 @@
-# The name of the workflow
 name: CI
 
-# Specifies the events that trigger the workflow
 on:
   push:
-    branches: [ main, humble ]
+    branches: [ humble, jazzy, main ]
   pull_request:
-    branches: [ main, humble ]
+    branches: [ humble, jazzy, main ]
 
-# Defines a set of jobs to be run as part of the workflow
 jobs:
-  # The name of the job
   ROS_CI:
     runs-on: ubuntu-22.04
     strategy:
@@ -18,7 +14,7 @@ jobs:
       matrix:
         ros_distribution:
           - humble
-          # - jazzy
+          - jazzy
           - rolling
         include:
           # ROS 2 Humble Hawksbill
@@ -26,9 +22,9 @@ jobs:
             ros_distribution: humble
             ros_version: 2
           # ROS 2 Jazzy Jalisco
-          # - docker_image: ubuntu:noble
-          #   ros_distribution: jazzy
-          #   ros_version: 2
+          - docker_image: ubuntu:noble
+            ros_distribution: jazzy
+            ros_version: 2
           # ROS 2 Rolling Ridley
           - docker_image: ubuntu:noble
             ros_distribution: rolling
@@ -49,13 +45,17 @@ jobs:
         with:
           required-ros-distributions: ${{ matrix.ros_distribution }}
 
+      - name: Add pip break-system-packages for rosdep
+        run: |
+          printf "[install]\nbreak-system-packages = true\n" | sudo tee /etc/pip.conf
+
       - name: Build and Test
         uses: ros-tooling/action-ros-ci@v0.3
         env:
           PIP_BREAK_SYSTEM_PACKAGES: "1"
         with:
           target-ros2-distro: ${{ matrix.ros_distribution }}
-          vcs-repo-file-url: "https://raw.githubusercontent.com/chan-1207/TB3-Machine-Learning/test/turtlebot3_machine_learning_ci.repos"
+          vcs-repo-file-url: "https://raw.githubusercontent.com/ROBOTIS-GIT/turtlebot3_machine_learning/main/turtlebot3_machine_learning_ci.repos"
           package-name: |
             turtlebot3_dqn
             turtlebot3_machine_learning
